@@ -1,5 +1,16 @@
 fastapi>=0.103.1
-uvicorn>=0.23.2
+uvicorn[standard]>=0.23.2
 networkx>=3.1
 spacy>=3.7.2
 rank_bm25>=0.2.2
+pydantic>=2.6.0
+email-validator>=2.0.0
+openai>=1.40.0
+google-generativeai>=0.8.3
+python-dotenv>=1.0.0
+PyYAML>=6.0.1
+passlib[bcrypt]>=1.7.4
+python-jose[cryptography]>=3.3.0
+bcrypt>=4.0.0
+pypdf>=4.2.0
+requests>=2.31.0

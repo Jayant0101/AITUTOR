@@ -1,0 +1,10 @@
+data_dir: backend/data
+top_k: 3
+expand_depth_full: 1
+cases:
+  - query: "What is BM25 retrieval?"
+    gold_node_ids: []
+  - query: "Explain the learner model."
+    gold_node_ids: []
+  - query: "What is a knowledge graph?"
+    gold_node_ids: []
