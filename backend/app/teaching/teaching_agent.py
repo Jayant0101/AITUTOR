@@ -55,6 +55,7 @@ class TeachingAgent:
         context_items = self._flatten_context(retrieval_results)
         citations = self._build_citations(context_items)
         focus_node_id = context_items[0]["id"] if context_items else None
+        context_terms = self._context_terms(context_items)
 
         llm_payload = self._generate_with_llm(
             query=query,
@@ -63,6 +64,13 @@ class TeachingAgent:
             mastery_by_node=mastery_by_node,
         )
         if llm_payload:
+            if llm_payload.get("mode") == "socratic":
+                grounded_text, ungrounded = self._ground_text(
+                    llm_payload.get("text", ""), context_terms
+                )
+                if grounded_text:
+                    llm_payload["text"] = grounded_text
+                llm_payload["ungrounded_sentences"] = ungrounded
             llm_payload["citations"] = citations
             if focus_node_id:
                 llm_payload["focus_node_id"] = focus_node_id
@@ -84,11 +92,13 @@ class TeachingAgent:
             context_items=context_items,
             mastery_by_node=mastery_by_node,
         )
+        grounded_text, ungrounded = self._ground_text(response_text, context_terms)
         return {
             "mode": "socratic",
-            "text": response_text,
+            "text": grounded_text or response_text,
             "citations": citations,
             "focus_node_id": focus_node_id,
+            "ungrounded_sentences": ungrounded,
         }
 
     def _generate_with_llm(
@@ -186,6 +196,15 @@ Return strict JSON:
             )
         return citations
 
+    def _context_terms(self, context_items: list[dict]) -> set[str]:
+        terms: set[str] = set()
+        for item in context_items[:10]:
+            heading = item.get("heading", "")
+            terms.update(self._tokens(heading))
+            for keyword in item.get("keywords", []) or []:
+                terms.update(self._tokens(str(keyword)))
+        return terms
+
     def _offline_socratic(
         self,
         query: str,
@@ -267,6 +286,28 @@ Return strict JSON:
             return "The core details are in the retrieved course context."
         sentence = re.split(r"(?<=[.!?])\s+", normalized)[0]
         return sentence[:300]
+
+    def _ground_text(self, text: str, context_terms: set[str]) -> tuple[str, list[str]]:
+        if not text.strip():
+            return "", []
+        if not context_terms:
+            return text, []
+
+        sentences = re.split(r"(?<=[.!?])\s+", text.strip())
+        grounded = []
+        ungrounded = []
+        for sentence in sentences:
+            tokens = set(self._tokens(sentence))
+            if tokens.intersection(context_terms):
+                grounded.append(sentence)
+            else:
+                ungrounded.append(sentence)
+
+        grounded_text = " ".join(grounded).strip()
+        return grounded_text, ungrounded
+
+    def _tokens(self, text: str) -> list[str]:
+        return re.findall(r"[a-zA-Z0-9]{3,}", text.lower())
 
     def _query_has_misconception_signal(self, query: str) -> bool:
         lowered = query.lower()

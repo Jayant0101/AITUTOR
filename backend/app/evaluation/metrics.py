@@ -41,6 +41,28 @@ def groundedness_score(answer: str, citations: list[dict]) -> float:
     return min(1.0, hits / max(len(cited_heads), 1))
 
 
+def hallucination_rate(answer: str, citations: list[dict]) -> float:
+    if not answer.strip():
+        return 1.0 if citations else 0.0
+    sentences = [s for s in answer.split(".") if s.strip()]
+    if not sentences:
+        return 0.0
+    if not citations:
+        return 1.0
+    terms = set()
+    for c in citations:
+        heading = c.get("heading", "")
+        for token in heading.lower().split():
+            if len(token) >= 3:
+                terms.add(token)
+    ungrounded = 0
+    for sentence in sentences:
+        tokens = {t for t in sentence.lower().split() if len(t) >= 3}
+        if not tokens.intersection(terms):
+            ungrounded += 1
+    return ungrounded / max(len(sentences), 1)
+
+
 def latency_ms(start_s: float, end_s: float) -> float:
     return max(0.0, (end_s - start_s) * 1000.0)
 

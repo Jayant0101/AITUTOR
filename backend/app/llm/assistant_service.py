@@ -23,6 +23,10 @@ class LearningAssistantService:
 
     def initialize(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
+        # Ensure database parent directory exists
+        db_dir = Path(self.db_path).parent
+        db_dir.mkdir(parents=True, exist_ok=True)
+        
         self.learner.initialize_schema()
         self._ensure_seed_content()
         self.load_knowledge_base()

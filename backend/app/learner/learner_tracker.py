@@ -190,7 +190,7 @@ class LearnerTracker:
         correct_attempts = int(state["correct_attempts"])
         previous_interval = int(state["last_interval_days"] or 1)
 
-        mastery, slip, guess, learn_rate = self._bkt_update(
+        mastery, slip, guess, learn_rate = self.bkt_update(
             mastery=mastery, is_correct=is_correct, difficulty=difficulty
         )
         if is_correct:
@@ -272,8 +272,9 @@ class LearnerTracker:
             "recommended_difficulty": self.get_recommended_difficulty(mastery),
         }
 
-    def _bkt_update(
-        self, mastery: float, is_correct: bool, difficulty: str
+    @staticmethod
+    def bkt_update(
+        mastery: float, is_correct: bool, difficulty: str
     ) -> tuple[float, float, float, float]:
         base_slip = 0.1
         base_guess = 0.2
@@ -296,6 +297,15 @@ class LearnerTracker:
 
         updated = posterior + (1 - posterior) * learn_rate
         return min(1.0, max(0.0, updated)), slip, guess, learn_rate
+
+    @staticmethod
+    def estimate_learning_gain(
+        prior_mastery: float, is_correct: bool, difficulty: str
+    ) -> float:
+        updated, _, _, _ = LearnerTracker.bkt_update(
+            mastery=prior_mastery, is_correct=is_correct, difficulty=difficulty
+        )
+        return max(0.0, updated - prior_mastery)
 
     def learner_progress(self, user_id: str) -> dict:
         with self._connect() as conn:

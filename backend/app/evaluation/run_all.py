@@ -14,8 +14,10 @@ from app.graph.graph_builder import KnowledgeGraph
 from app.ingestion.ingestion import MarkdownParser
 from app.retrieval.retrieval import RetrievalEngine
 from app.teaching.teaching_agent import TeachingAgent
+from app.learner.learner_tracker import LearnerTracker
 from app.evaluation.metrics import (
     groundedness_score,
+    hallucination_rate,
     latency_ms,
     precision_at_k,
     recall_at_k,
@@ -91,11 +93,23 @@ def run_case(
 
     citations = answer.get("citations", []) if isinstance(answer, dict) else []
     response_text = answer.get("text", "") if isinstance(answer, dict) else ""
+    ungrounded = answer.get("ungrounded_sentences", []) if isinstance(answer, dict) else []
+
+    prior_mastery = 0.25
+    is_correct = True if predicted_ids else False
+    learning_gain = LearnerTracker.estimate_learning_gain(prior_mastery, is_correct, "medium")
+    hallucination = (
+        len(ungrounded) / max(len(response_text.split(".")), 1)
+        if ungrounded
+        else hallucination_rate(response_text, citations)
+    )
 
     return {
         "precision@k": precision_at_k(predicted_ids, case.gold_node_ids, top_k),
         "recall@k": recall_at_k(predicted_ids, case.gold_node_ids, top_k),
         "groundedness": groundedness_score(response_text, citations),
+        "hallucination_rate": hallucination,
+        "learning_gain": learning_gain,
         "latency_ms": latency_ms(start, end),
     }
 

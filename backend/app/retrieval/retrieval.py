@@ -49,6 +49,8 @@ class RetrievalEngine:
         self.kg = knowledge_graph
         self.bm25: BM25Okapi | None = None
         self.node_ids: list[str] = []
+        self.node_meta: dict[str, dict] = {}
+        self.alias_map: dict[str, set[str]] = {}
         self._build_index()
 
     def _tokenize(self, text: str) -> list[str]:
@@ -58,6 +60,8 @@ class RetrievalEngine:
     def _build_index(self) -> None:
         corpus: list[list[str]] = []
         self.node_ids = []
+        self.node_meta = {}
+        self.alias_map = {}
 
         for node_id, data in self.kg.graph.nodes(data=True):
             self.node_ids.append(node_id)
@@ -67,7 +71,20 @@ class RetrievalEngine:
             keywords = " ".join(data.get("keywords", []))
             source = data.get("source", "")
             document_text = f"{heading} {content} {entities} {keywords} {source}"
-            corpus.append(self._tokenize(document_text))
+            tokens = self._tokenize(document_text)
+            corpus.append(tokens)
+
+            heading_tokens = self._tokenize(heading)
+            keyword_tokens = self._tokenize(keywords)
+            entity_tokens = self._tokenize(entities)
+            self.node_meta[node_id] = {
+                "heading_tokens": heading_tokens,
+                "keyword_tokens": keyword_tokens,
+                "entity_tokens": entity_tokens,
+            }
+
+            for token in set(heading_tokens + keyword_tokens + entity_tokens):
+                self.alias_map.setdefault(token, set()).add(node_id)
 
         self.bm25 = BM25Okapi(corpus) if corpus else None
 
@@ -78,22 +95,25 @@ class RetrievalEngine:
         if not self.bm25 or not self.node_ids:
             return []
 
-        tokenized_query = self._tokenize(query)
+        base_tokens = self._tokenize(query)
+        tokenized_query = self._expand_query(base_tokens)
         if not tokenized_query:
             return []
 
         scores = self.bm25.get_scores(tokenized_query)
-        ranked_indices = sorted(
-            range(len(scores)),
-            key=lambda idx: scores[idx],
-            reverse=True,
-        )
+        ranked_indices = sorted(range(len(scores)), key=lambda idx: scores[idx], reverse=True)
+        candidate_indices = ranked_indices[: max(top_n * 4, 6)]
+        reranked_indices = self._rerank_candidates(candidate_indices, scores, base_tokens)
 
         results: list[dict] = []
-        for idx in ranked_indices[: max(top_n, 1)]:
+        for idx in reranked_indices[: max(top_n, 1)]:
             node_id = self.node_ids[idx]
             node_data = dict(self.kg.graph.nodes[node_id])
-            context = self._expand_context(anchor_node_id=node_id, depth=expand_depth)
+            context = self._expand_context(
+                anchor_node_id=node_id,
+                depth=expand_depth,
+                query_tokens=base_tokens,
+            )
             results.append(
                 {
                     "anchor_node_id": node_id,
@@ -104,7 +124,9 @@ class RetrievalEngine:
             )
         return results
 
-    def _expand_context(self, anchor_node_id: str, depth: int = 1) -> list[dict]:
+    def _expand_context(
+        self, anchor_node_id: str, depth: int = 1, query_tokens: list[str] | None = None
+    ) -> list[dict]:
         if anchor_node_id not in self.kg.graph:
             return []
 
@@ -143,4 +165,49 @@ class RetrievalEngine:
             node_record = dict(self.kg.graph.nodes[node_id])
             node_record["id"] = node_id
             context_nodes.append(node_record)
-        return context_nodes
+        return self._filter_context(context_nodes, query_tokens or [])
+
+    def _expand_query(self, tokens: list[str]) -> list[str]:
+        expanded = set(tokens)
+        for token in tokens:
+            for node_id in self.alias_map.get(token, set()):
+                meta = self.node_meta.get(node_id, {})
+                expanded.update(meta.get("heading_tokens", [])[:3])
+                expanded.update(meta.get("keyword_tokens", [])[:3])
+        return list(expanded)
+
+    def _rerank_candidates(
+        self, candidate_indices: list[int], bm25_scores: list[float], query_tokens: list[str]
+    ) -> list[int]:
+        if not candidate_indices:
+            return []
+        max_score = max(bm25_scores[idx] for idx in candidate_indices) or 1.0
+        min_score = min(bm25_scores[idx] for idx in candidate_indices)
+        span = max_score - min_score or 1.0
+
+        def combined(idx: int) -> float:
+            node_id = self.node_ids[idx]
+            meta = self.node_meta.get(node_id, {})
+            tokens = set(
+                meta.get("heading_tokens", [])
+                + meta.get("keyword_tokens", [])
+                + meta.get("entity_tokens", [])
+            )
+            overlap = (
+                len(tokens.intersection(query_tokens)) / max(len(set(query_tokens)), 1)
+            )
+            bm25_norm = (bm25_scores[idx] - min_score) / span
+            return 0.7 * bm25_norm + 0.3 * overlap
+
+        return sorted(candidate_indices, key=combined, reverse=True)
+
+    def _filter_context(self, context_nodes: list[dict], query_tokens: list[str]) -> list[dict]:
+        if not query_tokens:
+            return context_nodes[:12]
+        filtered = []
+        for node in context_nodes:
+            heading = self._tokenize(node.get("heading", ""))
+            keywords = self._tokenize(" ".join(node.get("keywords", [])))
+            if set(heading + keywords).intersection(query_tokens):
+                filtered.append(node)
+        return filtered[:12] if filtered else context_nodes[:8]

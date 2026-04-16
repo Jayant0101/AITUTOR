@@ -16,6 +16,11 @@ from app.api.auth import (
     hash_password,
     verify_password,
 )
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 from app.schemas import (
     ChatRequest,
     ChatResponse,
@@ -48,6 +53,45 @@ def _default_db_path() -> str:
 def _default_upload_dir() -> str:
     return str(Path(__file__).resolve().parents[1] / "uploads")
 
+def _resolve_path(path: str) -> str:
+    """Resolve a path relative to the project root if it's not absolute."""
+    p = Path(path)
+    if p.is_absolute():
+        return str(p)
+    # Root is one level up from app/ (which is where main.py is, actually app/ is at the same level as data/ in some structures)
+    # Looking at the list_dir, backend/ is the root for the backend.
+    root = Path(__file__).resolve().parents[1]
+    return str((root / p).resolve())
+
+
+def _hydrate_attachments(raw: list[dict]) -> list[dict]:
+    attachments: list[dict] = []
+    for item in raw or []:
+        file_id = item.get("id")
+        record = file_store.get_file(file_id) if file_id else None
+        if record:
+            parsed = {}
+            if record.get("content_type") == "application/pdf":
+                parsed = file_parser.parse_pdf(record["path"])
+            elif str(record.get("content_type", "")).startswith("image/"):
+                parsed = file_parser.parse_image(record["path"])
+            attachments.append(
+                {
+                    "id": file_id,
+                    "name": record.get("name", "upload"),
+                    "text": parsed.get("text", ""),
+                }
+            )
+        else:
+            attachments.append(
+                {
+                    "id": item.get("id", ""),
+                    "name": item.get("name", "upload"),
+                    "text": item.get("text", ""),
+                }
+            )
+    return attachments
+
 app = FastAPI(
     title="SocratiQ Learning Assistant API",
     version="0.2.0",
@@ -67,12 +111,12 @@ app.add_middleware(
 )
 
 service = LearningAssistantService(
-    data_dir=os.getenv("DATA_DIR", _default_data_dir()),
-    db_path=os.getenv("LEARNER_DB_PATH", _default_db_path()),
+    data_dir=_resolve_path(os.getenv("DATA_DIR", _default_data_dir())),
+    db_path=_resolve_path(os.getenv("LEARNER_DB_PATH", _default_db_path())),
 )
-uploads_dir = Path(os.getenv("UPLOAD_DIR", _default_upload_dir()))
+uploads_dir = Path(_resolve_path(os.getenv("UPLOAD_DIR", _default_upload_dir())))
 uploads_dir.mkdir(parents=True, exist_ok=True)
-file_store = FileStore(db_path=os.getenv("LEARNER_DB_PATH", _default_db_path()))
+file_store = FileStore(db_path=service.db_path)
 file_store.initialize()
 file_parser = MultimodalParser()
 youtube_client = YouTubeSearchClient(api_key=os.getenv("YOUTUBE_API_KEY", ""))
@@ -96,42 +140,54 @@ def health() -> dict:
 # ──────────────────────────────────────────────────────────
 @app.post("/auth/register", response_model=TokenResponse)
 def register(body: RegisterRequest) -> TokenResponse:
-    existing = service.learner.get_user_by_email(body.email)
-    if existing:
-        raise HTTPException(status_code=409, detail="Email already registered")
+    try:
+        existing = service.learner.get_user_by_email(body.email)
+        if existing:
+            raise HTTPException(status_code=409, detail="Email already registered")
 
-    user_id = str(uuid.uuid4())
-    hashed = hash_password(body.password)
-    user = service.learner.register_user(
-        user_id=user_id,
-        email=body.email,
-        password_hash=hashed,
-        display_name=body.display_name or body.email,
-    )
-    token = create_access_token({"sub": user_id, "email": body.email})
-    return TokenResponse(
-        access_token=token,
-        user_id=user_id,
-        email=body.email,
-        display_name=user["display_name"],
-    )
+        user_id = str(uuid.uuid4())
+        hashed = hash_password(body.password)
+        user = service.learner.register_user(
+            user_id=user_id,
+            email=body.email,
+            password_hash=hashed,
+            display_name=body.display_name or body.email,
+        )
+        token = create_access_token({"sub": user_id, "email": body.email})
+        return TokenResponse(
+            access_token=token,
+            user_id=user_id,
+            email=body.email,
+            display_name=user["display_name"],
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Registration failed")
+        raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
 
 
 @app.post("/auth/login", response_model=TokenResponse)
 def login(body: LoginRequest) -> TokenResponse:
-    user = service.learner.get_user_by_email(body.email)
-    if not user or not user.get("password_hash"):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    if not verify_password(body.password, user["password_hash"]):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+    try:
+        user = service.learner.get_user_by_email(body.email)
+        if not user or not user.get("password_hash"):
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+        if not verify_password(body.password, user["password_hash"]):
+            raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    token = create_access_token({"sub": user["id"], "email": user["email"]})
-    return TokenResponse(
-        access_token=token,
-        user_id=user["id"],
-        email=user["email"],
-        display_name=user.get("display_name", ""),
-    )
+        token = create_access_token({"sub": user["id"], "email": user["email"]})
+        return TokenResponse(
+            access_token=token,
+            user_id=user["id"],
+            email=user["email"],
+            display_name=user.get("display_name", ""),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Login failed")
+        raise HTTPException(status_code=500, detail=f"Login failed: {str(e)}")
 
 
 @app.get("/auth/me", response_model=UserResponse)
@@ -169,7 +225,7 @@ def chat(request: ChatRequest, current: dict = Depends(get_current_user)) -> Cha
         query=request.query,
         top_k=request.top_k,
         mode=request.mode,
-        attachments=request.attachments,
+        attachments=_hydrate_attachments(request.attachments),
     )
     return ChatResponse(**payload)
 
@@ -181,7 +237,7 @@ def chat_stream(request: ChatRequest, current: dict = Depends(get_current_user))
         query=request.query,
         top_k=request.top_k,
         mode=request.mode,
-        attachments=request.attachments,
+        attachments=_hydrate_attachments(request.attachments),
     )
     text = payload.get("result", {}).get("text", "")
 

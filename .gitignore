@@ -1,0 +1,46 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.env
+.env.*
+!.env.template
+
+# --- Node.js ---
+node_modules/
+dist/
+dist-ssr/
+*.local
+.eslintcache
+
+# --- Databases ---
+*.db
+*.sqlite
+*.sqlite3
+
+# --- OS / IDE ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- Docker ---
+.dockerignore
+docker-compose.override.yml
+
+# --- Project Specific ---
+backend/uploads/
+evaluation/results/
+evaluation/configs/auto.yaml
+.planning/state.json
+.planning/phases/*/COMMIT_MSG
+.planning/phases/*/PLAN.md
+.planning/phases/*/RESEARCH.md
+
+# --- Logs ---
+*.log
+logs/

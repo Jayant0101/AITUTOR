@@ -1,0 +1,107 @@
+{
+  "config": {
+    "data_dir": "backend/data",
+    "top_k": 3,
+    "expand_depth_full": 1,
+    "runs": 5,
+    "seed": 42
+  },
+  "summary": {
+    "llm_only": {
+      "precision@k": {
+        "mean": 0.0,
+        "std": 0.0,
+        "ci95": 0.0
+      },
+      "recall@k": {
+        "mean": 0.0,
+        "std": 0.0,
+        "ci95": 0.0
+      },
+      "groundedness": {
+        "mean": 0.0,
+        "std": 0.0,
+        "ci95": 0.0
+      },
+      "hallucination_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "ci95": 0.0
+      },
+      "learning_gain": {
+        "mean": 0.0,
+        "std": 0.0,
+        "ci95": 0.0
+      },
+      "latency_ms": {
+        "mean": 0.006993611653645833,
+        "std": 0.0033085654070615467,
+        "ci95": 0.0011839549255335292
+      }
+    },
+    "bm25_only": {
+      "precision@k": {
+        "mean": 0.3333333333333333,
+        "std": 0.0,
+        "ci95": 0.0
+      },
+      "recall@k": {
+        "mean": 1.0,
+        "std": 0.0,
+        "ci95": 0.0
+      },
+      "groundedness": {
+        "mean": 0.3333333333333333,
+        "std": 0.0,
+        "ci95": 0.0
+      },
+      "hallucination_rate": {
+        "mean": 0.3611111111111111,
+        "std": 0.06317483696490862,
+        "ci95": 0.022606825071295883
+      },
+      "learning_gain": {
+        "mean": 0.398,
+        "std": 0.0,
+        "ci95": 0.0
+      },
+      "latency_ms": {
+        "mean": 0.5957126617431641,
+        "std": 0.45898719309283137,
+        "ci95": 0.16424645765177642
+      }
+    },
+    "full_system": {
+      "precision@k": {
+        "mean": 0.3333333333333333,
+        "std": 0.0,
+        "ci95": 0.0
+      },
+      "recall@k": {
+        "mean": 1.0,
+        "std": 0.0,
+        "ci95": 0.0
+      },
+      "groundedness": {
+        "mean": 0.3333333333333333,
+        "std": 0.0,
+        "ci95": 0.0
+      },
+      "hallucination_rate": {
+        "mean": 0.3611111111111111,
+        "std": 0.06317483696490862,
+        "ci95": 0.022606825071295883
+      },
+      "learning_gain": {
+        "mean": 0.398,
+        "std": 0.0,
+        "ci95": 0.0
+      },
+      "latency_ms": {
+        "mean": 0.5911986033121744,
+        "std": 0.22809432786497794,
+        "ci95": 0.08162250695894337
+      }
+    }
+  }
+}
