@@ -1,3 +1,4 @@
+psycopg2-binary>=2.9.9
 fastapi>=0.103.1
 uvicorn[standard]>=0.23.2
 networkx>=3.1
@@ -16,3 +17,5 @@ pypdf>=4.2.0
 requests>=2.31.0
 python-multipart>=0.0.6
 numpy>=1.24.0
+tavily-python>=0.3.0
+gunicorn>=21.2.0

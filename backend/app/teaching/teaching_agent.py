@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+from app.verification import ground_claims
+
 import json
 import os
 import re
+import logging
+import time
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 class TeachingAgent:
@@ -55,22 +61,44 @@ class TeachingAgent:
         context_items = self._flatten_context(retrieval_results)
         citations = self._build_citations(context_items)
         focus_node_id = context_items[0]["id"] if context_items else None
-        context_terms = self._context_terms(context_items)
+
+        if not context_items:
+            return self._insufficient_context_response(mode)
+
+        # Pipeline contract: Retrieve -> Extract verified facts -> (optionally verify) -> Generate.
+        # If we can't produce any verified facts, do not call the LLM.
+        verified_facts = self._extract_verified_facts(
+            query=query,
+            context_items=context_items,
+            mode=mode,
+        )
+        if not verified_facts:
+            return self._insufficient_context_response(mode)
 
         llm_payload = self._generate_with_llm(
             query=query,
             mode=mode,
             context_items=context_items,
             mastery_by_node=mastery_by_node,
+            verified_facts=verified_facts,
         )
         if llm_payload:
             if llm_payload.get("mode") == "socratic":
-                grounded_text, ungrounded = self._ground_text(
-                    llm_payload.get("text", ""), context_terms
+                structured = self._build_structured_text_from_llm(
+                    llm_payload=llm_payload,
+                    context_items=context_items,
+                    mastery_by_node=mastery_by_node,
                 )
-                if grounded_text:
-                    llm_payload["text"] = grounded_text
-                llm_payload["ungrounded_sentences"] = ungrounded
+                
+                grounding_results = ground_claims(structured, retrieval_results)
+                
+                # Strict safety: never return ungrounded text.
+                if grounding_results["grounded_answer"].strip():
+                    llm_payload["text"] = self._append_sources_footer(grounding_results["grounded_answer"], citations)
+                    llm_payload["grounding"] = grounding_results
+                else:
+                    llm_payload["text"] = "Insufficient information."
+                    llm_payload["grounding"] = None
             llm_payload["citations"] = citations
             if focus_node_id:
                 llm_payload["focus_node_id"] = focus_node_id
@@ -92,13 +120,16 @@ class TeachingAgent:
             context_items=context_items,
             mastery_by_node=mastery_by_node,
         )
-        grounded_text, ungrounded = self._ground_text(response_text, context_terms)
+        grounding_results = ground_claims(response_text, retrieval_results)
+        
         return {
             "mode": "socratic",
-            "text": grounded_text or response_text,
+            "text": self._append_sources_footer(grounding_results["grounded_answer"], citations)
+            if grounding_results["grounded_answer"].strip()
+            else "Insufficient information.",
             "citations": citations,
             "focus_node_id": focus_node_id,
-            "ungrounded_sentences": ungrounded,
+            "grounding": grounding_results,
         }
 
     def _generate_with_llm(
@@ -107,15 +138,14 @@ class TeachingAgent:
         mode: str,
         context_items: list[dict],
         mastery_by_node: dict[str, dict],
+        verified_facts: list[str],
     ) -> dict | None:
         if not context_items:
             return None
 
-        context_lines = []
-        for item in context_items[:8]:
-            context_lines.append(
-                f"[{item['id']}] {item.get('heading', 'Untitled')}: {item.get('content', '')}"
-            )
+        facts_lines = []
+        for idx, fact in enumerate(verified_facts, start=1):
+            facts_lines.append(f"[F{idx}] {fact}")
         mastery_lines = []
         for node_id, state in mastery_by_node.items():
             mastery_lines.append(
@@ -123,22 +153,32 @@ class TeachingAgent:
             )
 
         prompt = f"""
-You are an AI tutor. Use only the provided context.
+You are an AI tutor. You must answer ONLY using the provided verified facts.
+If information is insufficient, you must say exactly: "Insufficient information."
 Mode: {mode}
 Student query: {query}
 
-Context:
-{chr(10).join(context_lines)}
+Verified facts:
+{chr(10).join(facts_lines)}
 
 Learner mastery:
 {chr(10).join(mastery_lines) if mastery_lines else "No prior mastery data."}
 
 Return strict JSON:
-- For socratic mode: {{"mode":"socratic","text":"...", "follow_up_question":"..."}}
+- For socratic mode:
+{{
+  "mode":"socratic",
+  "concept":"...",
+  "steps":["...","..."],
+  "example":"...",
+  "check_question":"..."
+}}
 - For quiz mode: {{"mode":"quiz","question":"...","expected_answer":"...","difficulty":"easy|medium|hard"}}
 """
 
         text_response = None
+        logger.info(f"LLM teaching generation starting for mode='{mode}', provider='{self.provider}'")
+        start_time = time.time()
         try:
             if self._openai_client:
                 completion = self._openai_client.chat.completions.create(
@@ -148,12 +188,25 @@ Return strict JSON:
                         {"role": "system", "content": "Return only valid JSON."},
                         {"role": "user", "content": prompt},
                     ],
+                    timeout=10,  # Phase 5: performance safety
                 )
                 text_response = completion.choices[0].message.content
             elif self._gemini_model:
-                completion = self._gemini_model.generate_content(prompt)
-                text_response = completion.text
-        except Exception:
+                try:
+                    completion = self._gemini_model.generate_content(
+                        prompt,
+                        request_options={"timeout": 10}
+                    )
+                    text_response = completion.text
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).warning(f"Gemini teaching generation failed: {e}")
+                    return None
+            
+            duration = time.time() - start_time
+            logger.info(f"LLM teaching generation completed in {duration:.2f}s")
+        except Exception as e:
+            logger.warning(f"LLM teaching generation failed after {time.time() - start_time:.2f}s: {e}")
             return None
 
         if not text_response:
@@ -196,14 +249,60 @@ Return strict JSON:
             )
         return citations
 
-    def _context_terms(self, context_items: list[dict]) -> set[str]:
-        terms: set[str] = set()
-        for item in context_items[:10]:
-            heading = item.get("heading", "")
-            terms.update(self._tokens(heading))
-            for keyword in item.get("keywords", []) or []:
-                terms.update(self._tokens(str(keyword)))
-        return terms
+
+
+    def _extract_verified_facts(
+        self,
+        *,
+        query: str,
+        context_items: list[dict],
+        mode: str,
+    ) -> list[str]:
+        """
+        Stage 1+2: extract candidate claims (sentences) and verify them via grounding signals.
+        We use a lightweight heuristic verifier: keep sentences that overlap with both the query
+        and the available context term set. This is hallucination-safe because the generator
+        never sees non-overlapping claims.
+        """
+        min_query_overlap = int(os.getenv("FACT_MIN_QUERY_OVERLAP", "1"))
+        # In quiz mode, `query` is typically a meta-instruction (e.g., "Quiz me on ..."),
+        # so enforce weaker coupling between the prompt and the retrieved content.
+        if mode == "quiz":
+            min_query_overlap = 0
+        min_sentence_chars = int(os.getenv("FACT_MIN_SENTENCE_CHARS", "25"))
+        max_facts = int(os.getenv("FACT_MAX_FACTS", "10"))
+
+        query_tokens = set(self._tokens(query))
+
+        verified: list[str] = []
+        seen: set[str] = set()
+
+        for item in context_items[:8]:
+            content = str(item.get("content") or "").strip()
+            if not content:
+                # Some knowledge graph nodes embed text in `heading` (chunking artifacts).
+                content = str(item.get("heading") or "").strip()
+            if not content:
+                continue
+            # Split on sentence boundaries; keep fairly complete sentences.
+            sentences = re.split(r"(?<=[.!?])\s+", content)
+            for sentence in sentences:
+                s = sentence.strip()
+                if len(s) < min_sentence_chars:
+                    continue
+                tokens = set(self._tokens(s))
+                if not tokens:
+                    continue
+
+                overlap_query = len(tokens.intersection(query_tokens))
+                if overlap_query >= min_query_overlap:
+                    if s not in seen:
+                        seen.add(s)
+                        verified.append(s)
+                if len(verified) >= max_facts:
+                    return verified
+
+        return verified
 
     def _offline_socratic(
         self,
@@ -212,10 +311,7 @@ Return strict JSON:
         mastery_by_node: dict[str, dict],
     ) -> str:
         if not context_items:
-            return (
-                "I could not find grounded course context for that question yet. "
-                "Try rephrasing with key terms from your study material."
-            )
+            return "Insufficient information."
 
         focus = context_items[0]
         focus_mastery = mastery_by_node.get(focus["id"], {}).get("mastery", 0.25)
@@ -240,10 +336,11 @@ Return strict JSON:
             f"What is one prerequisite idea you think {focus.get('heading', 'this concept')} depends on?"
         )
         return (
-            f"{level_hint}{misconception_hint}"
-            f"Focus concept: {focus.get('heading', 'Untitled')}. "
-            f"Grounded explanation: {summary} "
-            f"Socratic check: {follow_up}"
+            f"Concept: {focus.get('heading', 'Untitled')}. "
+            f"Step-by-step: 1) {level_hint.strip()} 2) {misconception_hint.strip() or 'Connect the core mechanism to the lesson goal.'} "
+            f"3) Grounded explanation: {summary} "
+            f"Example: In this lesson context, {focus.get('heading', 'the concept')} is used to improve answer quality by selecting relevant evidence first. "
+            f"Check understanding: {follow_up}"
         ).strip()
 
     def _offline_quiz(
@@ -255,7 +352,7 @@ Return strict JSON:
         if not context_items:
             return {
                 "mode": "quiz",
-                "question": "No context available yet. Ask a content question first.",
+                "question": "Insufficient information.",
                 "expected_answer": "",
                 "difficulty": "easy",
             }
@@ -287,24 +384,7 @@ Return strict JSON:
         sentence = re.split(r"(?<=[.!?])\s+", normalized)[0]
         return sentence[:300]
 
-    def _ground_text(self, text: str, context_terms: set[str]) -> tuple[str, list[str]]:
-        if not text.strip():
-            return "", []
-        if not context_terms:
-            return text, []
 
-        sentences = re.split(r"(?<=[.!?])\s+", text.strip())
-        grounded = []
-        ungrounded = []
-        for sentence in sentences:
-            tokens = set(self._tokens(sentence))
-            if tokens.intersection(context_terms):
-                grounded.append(sentence)
-            else:
-                ungrounded.append(sentence)
-
-        grounded_text = " ".join(grounded).strip()
-        return grounded_text, ungrounded
 
     def _tokens(self, text: str) -> list[str]:
         return re.findall(r"[a-zA-Z0-9]{3,}", text.lower())
@@ -321,3 +401,63 @@ Return strict JSON:
             "never",
         ]
         return any(signal in lowered for signal in signals)
+
+    def _build_structured_text_from_llm(
+        self,
+        llm_payload: dict,
+        context_items: list[dict],
+        mastery_by_node: dict[str, dict],
+    ) -> str:
+        concept = llm_payload.get("concept") or context_items[0].get("heading", "Concept")
+        steps = llm_payload.get("steps") or []
+        if not isinstance(steps, list):
+            steps = [str(steps)]
+        trimmed_steps = [str(step).strip() for step in steps if str(step).strip()][:3]
+        if not trimmed_steps:
+            fallback = self._first_sentence(context_items[0].get("content", ""))
+            trimmed_steps = [fallback]
+
+        example = str(llm_payload.get("example", "")).strip()
+        if not example:
+            example = f"Use {concept} on a question where retrieval quality impacts answer accuracy."
+
+        check_q = str(llm_payload.get("check_question", "")).strip()
+        if not check_q:
+            check_q = f"How would you apply {concept} in this lesson?"
+
+        focus_id = context_items[0].get("id", "")
+        focus_mastery = float(mastery_by_node.get(focus_id, {}).get("mastery", 0.25))
+        level_prefix = "Foundational" if focus_mastery < 0.4 else "Advanced" if focus_mastery > 0.75 else "Core"
+        numbered_steps = " ".join(
+            [f"{idx + 1}) {step}" for idx, step in enumerate(trimmed_steps)]
+        )
+        return (
+            f"Concept: {concept}. "
+            f"Step-by-step ({level_prefix}): {numbered_steps} "
+            f"Example: {example} "
+            f"Check understanding: {check_q}"
+        )
+
+    def _append_sources_footer(self, text: str, citations: list[dict]) -> str:
+        if not citations:
+            return text
+        source_labels = []
+        for idx, citation in enumerate(citations[:3], start=1):
+            heading = citation.get("heading", "Untitled")
+            source_labels.append(f"[S{idx}] {heading}")
+        return f"{text}\nSources: {'; '.join(source_labels)}"
+
+    def _insufficient_context_response(self, mode: str) -> dict:
+        if mode == "quiz":
+            return {
+                "mode": "quiz",
+                "question": "Insufficient information.",
+                "expected_answer": "",
+                "difficulty": "easy",
+                "citations": [],
+            }
+        return {
+            "mode": "socratic",
+            "text": "Insufficient information.",
+            "citations": [],
+        }

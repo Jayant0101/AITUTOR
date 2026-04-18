@@ -1,0 +1,30 @@
+flowchart TD
+    subgraph CLI ["CLI Layer (PowerShell Scripts)"]
+        gsd_commands["gsd-* Commands"]
+    end
+
+    subgraph ConfigDir [".agent/get-shit-done/"]
+        skills["Skills Metadata"]
+        refs["References & Guidelines"]
+        templates["Templates"]
+    end
+
+    subgraph StateDir [".planning/"]
+        roadmap["ROADMAP.md"]
+        state["STATE.md"]
+        req["REQUIREMENTS.md"]
+        methodology["METHODOLOGY.md"]
+        phases["phases/"]
+        spikes["spikes/"]
+    end
+
+    subgraph AgentLayer ["Agent Layer (Gemini/Claude/OpenAI)"]
+        orchestrator["Orchestrator Agent"]
+        planner["Planner Agent"]
+        executor["Executor Agent"]
+        checker["Plan Checker / Verifier"]
+    end
+
+    CLI --> AgentLayer
+    CLI -.-> ConfigDir
+    AgentLayer <--> StateDir

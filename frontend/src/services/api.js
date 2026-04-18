@@ -1,9 +1,8 @@
 /**
  * API service layer — all requests to FastAPI backend.
- * In development, Vite proxies /api → http://localhost:8000
  */
 
-const API_BASE = '/api';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
 function getHeaders() {
   const headers = { 'Content-Type': 'application/json' };
@@ -19,7 +18,23 @@ async function request(method, path, body = null) {
   if (body) options.body = JSON.stringify(body);
 
   const res = await fetch(`${API_BASE}${path}`, options);
-  const data = await res.json();
+  
+  let data = {};
+  const contentType = res.headers.get('content-type');
+  if (contentType && contentType.includes('application/json')) {
+    try {
+      data = await res.json();
+    } catch (e) {
+      console.error('Failed to parse JSON:', e);
+    }
+  } else {
+    // Handle non-JSON response (e.g. proxy error, empty body)
+    const text = await res.text();
+    if (!res.ok) {
+      throw new Error(text || `Request failed (${res.status})`);
+    }
+    data = text ? { text } : {};
+  }
 
   if (!res.ok) {
     const errorMsg = data.detail || `Request failed (${res.status})`;
@@ -39,7 +54,22 @@ async function uploadRequest(path, file) {
     body: form,
   });
 
-  const data = await res.json();
+  let data = {};
+  const contentType = res.headers.get('content-type');
+  if (contentType && contentType.includes('application/json')) {
+    try {
+      data = await res.json();
+    } catch (e) {
+      console.error('Failed to parse JSON:', e);
+    }
+  } else {
+    const text = await res.text();
+    if (!res.ok) {
+       throw new Error(text || `Upload failed (${res.status})`);
+    }
+    data = text ? { text } : {};
+  }
+
   if (!res.ok) {
     const errorMsg = data.detail || `Upload failed (${res.status})`;
     throw new Error(errorMsg);
@@ -60,18 +90,20 @@ export const authApi = {
 
 // ── Chat ──
 export const chatApi = {
-  send: (query, mode = 'socratic', topK = 3) =>
-    request('POST', '/chat', { query, mode, top_k: topK }),
-  stream: async (query, mode = 'socratic', topK = 3, onChunk = () => {}) => {
+  send: (query, mode = 'socratic', topK = 3, attachments = []) =>
+    request('POST', '/chat/query', { query, mode, top_k: topK, attachments }),
+  stream: async (query, mode = 'socratic', topK = 3, attachments = [], onChunk = () => {}) => {
     const res = await fetch(`${API_BASE}/chat/stream`, {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify({ query, mode, top_k: topK }),
+      body: JSON.stringify({ query, mode, top_k: topK, attachments }),
     });
 
     if (!res.ok || !res.body) {
-      const data = await res.json().catch(() => ({}));
-      const errorMsg = data.detail || `Stream failed (${res.status})`;
+      const contentType = res.headers.get('content-type') || '';
+      const isJson = contentType.includes('application/json');
+      const data = isJson ? await res.json().catch(() => ({})) : await res.text().catch(() => '');
+      const errorMsg = (isJson && data?.detail) ? data.detail : `Stream failed (${res.status})`;
       throw new Error(errorMsg);
     }
 
@@ -91,30 +123,37 @@ export const chatApi = {
 
     return buffer;
   },
-};
-
-// â”€â”€ Files â”€â”€
-export const fileApi = {
-  upload: (file) => uploadRequest('/files/upload', file),
-};
-
-// â”€â”€ YouTube â”€â”€
-export const youtubeApi = {
-  search: (query) => request('POST', '/search/youtube', { query }),
-};
-
-// ── Quiz ──
-export const quizApi = {
-  submit: (nodeId, question, expectedAnswer, userAnswer, difficulty = 'medium') =>
-    request('POST', '/quiz/submit', {
+  submitQuiz: (nodeId, question, expectedAnswer, userAnswer, difficulty = 'medium') =>
+    request('POST', '/chat/quiz/submit', {
       node_id: nodeId,
       question,
       expected_answer: expectedAnswer,
       user_answer: userAnswer,
       difficulty,
     }),
-  generate: (fileIds = []) =>
-    request('POST', '/quiz/generate', { file_ids: fileIds }),
+};
+
+// ── Files ──
+export const fileApi = {
+  upload: (file) => uploadRequest('/ingest/upload', file),
+};
+
+// ── YouTube ──
+export const youtubeApi = {
+  search: (query) => request('POST', '/search/youtube', { query }),
+};
+
+// ── Quiz ──
+export const quizApi = {
+  submit: (quizId, answers, timeTaken) =>
+    request('POST', '/quiz/submit', {
+      quiz_id: quizId,
+      answers: answers,
+      time_taken: timeTaken,
+    }),
+  generate: (topic, difficulty = 'medium', num_questions = 10) =>
+    request('POST', '/quiz/generate', { topic, difficulty, num_questions }),
+  history: () => request('GET', '/quiz/history'),
 };
 
 // ── Learner ──
@@ -122,12 +161,20 @@ export const learnerApi = {
   progress: () => request('GET', '/learner/progress'),
 };
 
-// ── Health ──
+// ── Health & Analytics ──
 export const healthApi = {
   check: () => request('GET', '/health'),
+  analytics: () => request('GET', '/analytics/summary'),
+  userAnalytics: (userId) => request('GET', `/analytics/user/${userId}`),
 };
 
 // ── Ingest ──
 export const ingestApi = {
   reload: () => request('POST', '/ingest', {}),
+};
+
+// ── Feedback ──
+export const feedbackApi = {
+  submit: (feedback, rating = null) =>
+    request('POST', '/feedback', { feedback, rating }),
 };

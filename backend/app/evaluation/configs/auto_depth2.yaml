@@ -1,0 +1,22 @@
+data_dir: backend/data
+top_k: 3
+expand_depth_full: 2
+cases:
+- query: Explain Vectorless Learning Assistant Overview.
+  gold_node_ids:
+  - 289bd8add3ae
+- query: Explain Ingestion.
+  gold_node_ids:
+  - 19271ffc2ceb
+- query: Explain Graph Construction.
+  gold_node_ids:
+  - c0f92edbd0f0
+- query: Explain Retrieval.
+  gold_node_ids:
+  - 33c88682cf5e
+- query: Explain Learner Model.
+  gold_node_ids:
+  - ac93a77fa9ba
+- query: Explain Teaching Agent.
+  gold_node_ids:
+  - 3be0646c986e

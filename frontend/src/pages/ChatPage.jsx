@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
@@ -32,6 +33,7 @@ function fileIcon(type) {
 }
 
 export default function ChatPage() {
+  const navigate = useNavigate();
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [mode, setMode] = useState('socratic');
@@ -42,6 +44,7 @@ export default function ChatPage() {
   const [streamingId, setStreamingId] = useState(null);
   const [streamSupported, setStreamSupported] = useState(true);
   const [quizGenerating, setQuizGenerating] = useState(false);
+  const [streamFallback, setStreamFallback] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -171,82 +174,77 @@ export default function ChatPage() {
     setAttachments([]);
     setLoading(true);
 
+    const msgId = `ai-${Date.now()}`;
+    let finalText = '';
+    let isUploadRequired = false;
+    let result = null;
+
     try {
-      let result = null;
       if (streamSupported && mode === 'socratic') {
-        const msgId = `ai-${Date.now()}`;
-        const placeholder = {
-          id: msgId,
-          role: 'ai',
-          type: 'socratic',
-          text: '',
-          followUp: '',
-          citations: [],
-          ts: Date.now(),
-        };
+        const placeholder = { id: msgId, role: 'ai', type: 'socratic', text: '', ts: Date.now() };
         setMessages((prev) => [...prev, placeholder]);
         setStreamingId(msgId);
 
         try {
-          await chatApi.stream(q, mode, 3, (text) => {
-            setMessages((prev) =>
-              prev.map((msg) => (msg.id === msgId ? { ...msg, text } : msg))
-            );
+          finalText = await chatApi.stream(q, mode, 3, outgoingAttachments, (text) => {
+            setMessages((prev) => prev.map((msg) => (msg.id === msgId ? { ...msg, text } : msg)));
           });
+          isUploadRequired = finalText.includes('upload a document to proceed') || finalText.includes('No relevant documents');
           setStreamingId(null);
         } catch (err) {
+          console.error('Streaming failed, falling back to regular send:', err);
           setStreamSupported(false);
           setStreamingId(null);
+          setStreamFallback(true);
+          // Remove the placeholder so the regular send can add its own message
           setMessages((prev) => prev.filter((msg) => msg.id !== msgId));
+          // Continue to regular send
         }
       }
 
-      if (!streamSupported) {
-        const data = await chatApi.send(q, mode);
-        result = data.result || {};
-      }
+      // If streaming was skipped or failed
+      if (!streamSupported || mode !== 'socratic') {
+        const data = await chatApi.send(q, mode, 3, outgoingAttachments);
+        result = data.result || data;
+        finalText = result.text || result.message || 'No response generated.';
+        isUploadRequired = data.status === 'no_data' || result.action === 'upload_required' || finalText.includes('upload a document to proceed');
 
-      if (!result) {
-        setLoading(false);
-        return;
-      }
-
-      if (result.mode === 'quiz') {
-        setPendingQuiz({
-          question: result.question,
-          expected_answer: result.expected_answer,
-          difficulty: result.difficulty,
-          focus_node_id: result.focus_node_id,
-        });
-
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `ai-${Date.now()}`,
-            role: 'ai',
-            type: 'quiz',
-            text: result.question,
+        if (result.mode === 'quiz') {
+          setPendingQuiz({
+            question: result.question,
+            expected_answer: result.expected_answer,
             difficulty: result.difficulty,
-            citations: result.citations,
-            ts: Date.now(),
-          },
-        ]);
-      } else {
+            focus_node_id: result.focus_node_id,
+          });
+
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `ai-${Date.now()}`,
+              role: 'ai',
+              type: 'quiz',
+              text: result.question,
+              difficulty: result.difficulty,
+              citations: result.citations,
+              ts: Date.now(),
+            },
+          ]);
+          return;
+        }
+
         let youtubeCard = null;
         try {
-          const youtube = await youtubeApi.search(q);
-          if (youtube && youtube.title) {
-            youtubeCard = youtube;
+          if (q.length > 5 && !isUploadRequired) {
+            const youtube = await youtubeApi.search(q);
+            if (youtube && youtube.title) youtubeCard = youtube;
           }
-        } catch (err) {
-          youtubeCard = null;
-        }
+        } catch (err) {}
 
-        const msgId = `ai-${Date.now()}`;
         const initial = {
           id: msgId,
           role: 'ai',
           type: 'socratic',
+          uploadRequired: isUploadRequired,
           text: '',
           followUp: result.follow_up_question,
           citations: result.citations,
@@ -254,7 +252,24 @@ export default function ChatPage() {
           ts: Date.now(),
         };
         setMessages((prev) => [...prev, initial]);
-        streamText(msgId, result.text || 'No response generated.');
+        streamText(msgId, finalText);
+      } else {
+        // Post-streaming enhancements (e.g. YouTube search)
+        let youtubeCard = null;
+        try {
+          if (q.length > 5 && !isUploadRequired) {
+            const youtube = await youtubeApi.search(q);
+            if (youtube && youtube.title) youtubeCard = youtube;
+          }
+        } catch (err) {}
+        
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === msgId
+              ? { ...msg, uploadRequired: isUploadRequired, youtube: youtubeCard }
+              : msg
+          )
+        );
       }
     } catch (err) {
       setMessages((prev) => [
@@ -276,25 +291,31 @@ export default function ChatPage() {
     if (!attachments.length || quizGenerating) return;
     setQuizGenerating(true);
     try {
-      const fileIds = attachments.map((item) => item.serverId || item.id);
-      const data = await quizApi.generate(fileIds);
+      // Fix: quizApi.generate expects (topic, difficulty, num_questions)
+      // We'll use the first attachment's name as the topic.
+      const topic = attachments[0].name.replace(/\.[^/.]+$/, "");
+      const data = await quizApi.generate(topic, 'medium', 10);
       const quiz = data.quiz || data;
+      
+      // Instead of just showing the first question in chat, let's offer to go to the Quiz Page
+      // for a full 10-question experience as requested in Phase 1 Flow 4.
       setMessages((prev) => [
         ...prev,
         {
           id: `ai-${Date.now()}`,
           role: 'ai',
-          type: 'quiz',
-          text: quiz.question || 'Quiz generated. Start answering to proceed.',
-          difficulty: quiz.difficulty || 'medium',
-          citations: quiz.citations || [],
+          type: 'socratic',
+          text: `I've generated a 10-question quiz on **${topic}** for you!`,
           ts: Date.now(),
         },
       ]);
+      
+      // Navigate to the quiz page
+      navigate(`/quiz?topic=${encodeURIComponent(topic)}&difficulty=medium`);
     } catch (err) {
       setMessages((prev) => [
         ...prev,
-        { id: `ai-${Date.now()}`, role: 'ai', type: 'error', text: `Quiz generation unavailable: ${err.message}`, ts: Date.now() },
+        { id: `ai-${Date.now()}`, role: 'ai', type: 'error', text: `Quiz generation failed: ${err.message}`, ts: Date.now() },
       ]);
     } finally {
       setQuizGenerating(false);
@@ -306,7 +327,7 @@ export default function ChatPage() {
     setLoading(true);
 
     try {
-      const result = await quizApi.submit(
+      const result = await chatApi.submitQuiz(
         pendingQuiz.focus_node_id || 'unknown',
         pendingQuiz.question,
         pendingQuiz.expected_answer,
@@ -355,6 +376,11 @@ export default function ChatPage() {
     <div className="chat-container">
       <div className="page-header" style={{ marginBottom: 'var(--space-md)' }}>
         <h1 className="page-title">Socratic Chat</h1>
+        {streamFallback && (
+          <div className="auth-error" style={{ marginTop: 'var(--space-sm)', marginBottom: 0 }}>
+            Streaming is unavailable right now. Falling back to standard responses.
+          </div>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', marginTop: 'var(--space-sm)' }}>
           <span className="page-subtitle" style={{ marginTop: 0 }}>Mode:</span>
           <div className="mode-toggle">
@@ -422,6 +448,17 @@ export default function ChatPage() {
                   {msg.text || (msg.type === 'socratic' && msg.id === streamingId ? ' ' : '')}
                 </ReactMarkdown>
               </div>
+
+              {msg.uploadRequired && (
+                <div style={{ marginTop: 'var(--space-md)' }}>
+                  <button 
+                    className="btn btn-primary" 
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <Paperclip size={16} /> Upload Document
+                  </button>
+                </div>
+              )}
 
               {msg.followUp && (
                 <div className="followup-chip">

@@ -1,0 +1,28 @@
+stateDiagram-v2
+    [*] --> PhaseInitialization
+    PhaseInitialization --> DiscussPhase : gsd-discuss-phase
+    
+    state DiscussPhase {
+        GatherContext --> QuestionUser
+        QuestionUser --> ContextGenerated: XX-CONTEXT.md
+        ContextGenerated --> DiscussionLog: XX-DISCUSSION-LOG.md
+    }
+    
+    DiscussPhase --> PlanPhase : gsd-plan-phase
+    
+    state PlanPhase {
+        DraftPlans --> CheckReview
+        CheckReview --> DraftPlans: Revisions Needed
+        CheckReview --> PlansApproved: XX-YY-PLAN.md
+    }
+    
+    PlanPhase --> ExecutePhase : gsd-execute-phase
+    
+    state ExecutePhase {
+        ExecutePlans --> GenerateSummary
+        GenerateSummary --> VerifyWork: XX-YY-SUMMARY.md
+    }
+    
+    ExecutePhase --> AuditPhase : gsd-validate-phase / gsd-audit-uat
+    AuditPhase --> Completed
+    Completed --> [*]

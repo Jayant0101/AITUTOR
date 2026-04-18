@@ -7,16 +7,22 @@ services:
       dockerfile: backend/Dockerfile.prod
     environment:
       - DATA_DIR=/app/data
+      - UPLOADS_DIR=/app/uploads
       - LEARNER_DB_PATH=/app/learner.db
       - LLM_PROVIDER=${LLM_PROVIDER:-gemini}
       - LLM_MODEL=${LLM_MODEL:-gemini-1.5-flash}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-socratiq-prod-secret}
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
+      - YOUTUBE_API_KEY=${YOUTUBE_API_KEY}
+      - SECRET_KEY=${SECRET_KEY}
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
       - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-1440}
     volumes:
       - ./backend/data:/app/data
+      - ./backend/uploads:/app/uploads
       - ./backend/learner.db:/app/learner.db
+    restart: always
 
   frontend:
     build:
@@ -24,13 +30,8 @@ services:
       dockerfile: frontend/Dockerfile.prod
     depends_on:
       - backend
+    restart: always
 
-  nginx:
-    build:
-      context: .
-      dockerfile: nginx/Dockerfile
-    ports:
-      - "80:80"
-    depends_on:
-      - backend
-      - frontend
+networks:
+  default:
+    name: socratiq-network

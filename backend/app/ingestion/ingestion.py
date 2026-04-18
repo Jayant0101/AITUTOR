@@ -31,6 +31,7 @@ class MarkdownParser:
         chunks: list[dict] = []
         parts = re.split(r"^(#{1,6})\s+(.+)$", content, flags=re.MULTILINE)
 
+        source_type = self._infer_source_type(source)
         if parts and parts[0].strip():
             chunks.append(
                 {
@@ -41,6 +42,7 @@ class MarkdownParser:
                     "heading": "Root",
                     "content": parts[0].strip(),
                     "source": source,
+                    "source_type": source_type,
                 }
             )
 
@@ -63,6 +65,7 @@ class MarkdownParser:
                     "heading": heading_text,
                     "content": body_text,
                     "source": source,
+                    "source_type": source_type,
                 }
             )
             chunk_index += 1
@@ -72,4 +75,14 @@ class MarkdownParser:
     def _generate_id(self, source: str, heading: str, level: int, index: int) -> str:
         base = f"{source}|{level}|{index}|{heading}"
         return hashlib.md5(base.encode("utf-8")).hexdigest()[:12]
+
+    def _infer_source_type(self, source: str) -> str:
+        source_lower = source.lower()
+        if "docs" in source_lower:
+            return "docs"
+        if "edu" in source_lower or "university" in source_lower:
+            return "educational"
+        if "blog" in source_lower:
+            return "blog"
+        return "unknown"
 

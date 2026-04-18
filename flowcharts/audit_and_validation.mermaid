@@ -1,0 +1,16 @@
+flowchart TD
+    Start[Phase Complete] --> Validate[gsd-validate-phase]
+    Validate --> NyquistCheck[Check Nyquist Principles]
+    NyquistCheck --> FindGaps{Gaps Found?}
+    FindGaps -- Yes --> GapList[Generate Gap Report]
+    GapList --> CreateGaps[gsd-plan-milestone-gaps]
+    CreateGaps --> SchedulePhases[Add Remediation Phases to ROADMAP]
+    FindGaps -- No --> UAT[gsd-audit-uat]
+    
+    UAT --> Compare[Compare against REQUIREMENTS.md]
+    Compare --> UATGaps{UAT Unmet?}
+    UATGaps -- Yes --> ReportUAT[Flag manual test/incomplete criteria]
+    UATGaps -- No --> MilestoneAudit[gsd-audit-milestone]
+    
+    MilestoneAudit --> Archival[gsd-complete-milestone]
+    Archival --> Archived[Move Phase state to Archive]

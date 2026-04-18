@@ -297,11 +297,18 @@ body {
   margin-bottom: var(--space-2xl);
 }
 
+/* --- Layout Utils --- */
 .grid-2 {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: 1fr 1fr;
   gap: var(--space-lg);
-  margin-bottom: var(--space-2xl);
+  margin-bottom: var(--space-lg);
+}
+
+@media (max-width: 768px) {
+  .grid-2 {
+    grid-template-columns: 1fr;
+  }
 }
 
 .action-card {
@@ -330,21 +337,105 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-sm);
+  margin-top: var(--space-md);
 }
 
 .metric-pill {
-  padding: 6px 12px;
-  border-radius: var(--radius-full);
-  background: rgba(255, 255, 255, 0.06);
+  padding: 4px 12px;
+  background: var(--bg-glass-strong);
   border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
   font-size: 0.75rem;
+  font-weight: 500;
   color: var(--text-secondary);
 }
 
 .pulse-text {
   margin-top: var(--space-md);
   font-size: 0.875rem;
-  color: var(--text-secondary);
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* --- Stats Mini Grid (Phase 4) --- */
+.stats-mini-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-md);
+  margin-top: var(--space-md);
+}
+
+.mini-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-sm);
+  background: var(--bg-glass);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+}
+
+.mini-stat-label {
+  font-size: 0.625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.mini-stat-value {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--accent-secondary);
+}
+
+/* --- Feedback Form (Phase 5) --- */
+.feedback-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  margin-top: var(--space-md);
+}
+
+.rating-row {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.rating-star {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: all var(--transition-fast);
+  padding: 2px;
+}
+
+.rating-star:hover {
+  transform: scale(1.2);
+  color: var(--accent-gold);
+}
+
+.rating-star.active {
+  color: var(--accent-gold);
+}
+
+.feedback-textarea {
+  width: 100%;
+  min-height: 80px;
+  padding: var(--space-sm);
+  background: var(--bg-glass);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  resize: vertical;
+}
+
+.feedback-textarea:focus {
+  outline: none;
+  border-color: var(--border-active);
+  background: var(--bg-glass-strong);
 }
 
 .stat-card {

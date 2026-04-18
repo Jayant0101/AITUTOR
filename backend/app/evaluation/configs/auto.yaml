@@ -3,20 +3,179 @@ top_k: 3
 expand_depth_full: 1
 cases:
 - query: Explain Vectorless Learning Assistant Overview.
+  gold_node_ids: &id001
+  - 289bd8add3ae
+  - c0f92edbd0f0
+  - 33c88682cf5e
+  - ac93a77fa9ba
+  relevance_by_id: &id002
+    289bd8add3ae: 3.0
+    c0f92edbd0f0: 2.0
+    33c88682cf5e: 2.0
+    ac93a77fa9ba: 2.0
+  hard_negative_node_ids: &id003 []
+- query: What are the core ideas behind Vectorless Learning Assistant Overview, and
+    how does it connect to related topics?
+  gold_node_ids: *id001
+  relevance_by_id: *id002
+  hard_negative_node_ids: *id003
+- query: When should I use Vectorless Learning Assistant Overview, and what closely
+    related concept should I avoid confusing it with?
+  gold_node_ids: *id001
+  relevance_by_id: *id002
+  hard_negative_node_ids: *id003
+- query: Compare Vectorless Learning Assistant Overview with its prerequisite concepts
+    and explain their relationship.
   gold_node_ids:
   - 289bd8add3ae
+  - c0f92edbd0f0
+  - 33c88682cf5e
+  relevance_by_id: *id002
+  hard_negative_node_ids: *id003
+- query: Disambiguate Vectorless Learning Assistant Overview from similar terms and
+    provide one concrete example.
+  gold_node_ids: *id001
+  relevance_by_id: *id002
+  hard_negative_node_ids: *id003
 - query: Explain Ingestion.
+  gold_node_ids: &id004
+  - 19271ffc2ceb
+  - 289bd8add3ae
+  relevance_by_id: &id005
+    19271ffc2ceb: 3.0
+    289bd8add3ae: 2.0
+  hard_negative_node_ids: &id006 []
+- query: What are the core ideas behind Ingestion, and how does it connect to related
+    topics?
+  gold_node_ids: *id004
+  relevance_by_id: *id005
+  hard_negative_node_ids: *id006
+- query: When should I use Ingestion, and what closely related concept should I avoid
+    confusing it with?
+  gold_node_ids: *id004
+  relevance_by_id: *id005
+  hard_negative_node_ids: *id006
+- query: Compare Ingestion with its prerequisite concepts and explain their relationship.
   gold_node_ids:
   - 19271ffc2ceb
+  - 289bd8add3ae
+  relevance_by_id: *id005
+  hard_negative_node_ids: *id006
+- query: Disambiguate Ingestion from similar terms and provide one concrete example.
+  gold_node_ids: *id004
+  relevance_by_id: *id005
+  hard_negative_node_ids: *id006
 - query: Explain Graph Construction.
+  gold_node_ids: &id007
+  - c0f92edbd0f0
+  - 289bd8add3ae
+  relevance_by_id: &id008
+    c0f92edbd0f0: 3.0
+    289bd8add3ae: 2.0
+  hard_negative_node_ids: &id009 []
+- query: What are the core ideas behind Graph Construction, and how does it connect
+    to related topics?
+  gold_node_ids: *id007
+  relevance_by_id: *id008
+  hard_negative_node_ids: *id009
+- query: When should I use Graph Construction, and what closely related concept should
+    I avoid confusing it with?
+  gold_node_ids: *id007
+  relevance_by_id: *id008
+  hard_negative_node_ids: *id009
+- query: Compare Graph Construction with its prerequisite concepts and explain their
+    relationship.
   gold_node_ids:
   - c0f92edbd0f0
+  - 289bd8add3ae
+  relevance_by_id: *id008
+  hard_negative_node_ids: *id009
+- query: Disambiguate Graph Construction from similar terms and provide one concrete
+    example.
+  gold_node_ids: *id007
+  relevance_by_id: *id008
+  hard_negative_node_ids: *id009
 - query: Explain Retrieval.
+  gold_node_ids: &id010
+  - 33c88682cf5e
+  - 289bd8add3ae
+  relevance_by_id: &id011
+    33c88682cf5e: 3.0
+    289bd8add3ae: 2.0
+  hard_negative_node_ids: &id012 []
+- query: What are the core ideas behind Retrieval, and how does it connect to related
+    topics?
+  gold_node_ids: *id010
+  relevance_by_id: *id011
+  hard_negative_node_ids: *id012
+- query: When should I use Retrieval, and what closely related concept should I avoid
+    confusing it with?
+  gold_node_ids: *id010
+  relevance_by_id: *id011
+  hard_negative_node_ids: *id012
+- query: Compare Retrieval with its prerequisite concepts and explain their relationship.
   gold_node_ids:
   - 33c88682cf5e
+  - 289bd8add3ae
+  relevance_by_id: *id011
+  hard_negative_node_ids: *id012
+- query: Disambiguate Retrieval from similar terms and provide one concrete example.
+  gold_node_ids: *id010
+  relevance_by_id: *id011
+  hard_negative_node_ids: *id012
 - query: Explain Learner Model.
+  gold_node_ids: &id013
+  - ac93a77fa9ba
+  - 289bd8add3ae
+  relevance_by_id: &id014
+    ac93a77fa9ba: 3.0
+    289bd8add3ae: 2.0
+  hard_negative_node_ids: &id015 []
+- query: What are the core ideas behind Learner Model, and how does it connect to
+    related topics?
+  gold_node_ids: *id013
+  relevance_by_id: *id014
+  hard_negative_node_ids: *id015
+- query: When should I use Learner Model, and what closely related concept should
+    I avoid confusing it with?
+  gold_node_ids: *id013
+  relevance_by_id: *id014
+  hard_negative_node_ids: *id015
+- query: Compare Learner Model with its prerequisite concepts and explain their relationship.
   gold_node_ids:
   - ac93a77fa9ba
+  - 289bd8add3ae
+  relevance_by_id: *id014
+  hard_negative_node_ids: *id015
+- query: Disambiguate Learner Model from similar terms and provide one concrete example.
+  gold_node_ids: *id013
+  relevance_by_id: *id014
+  hard_negative_node_ids: *id015
 - query: Explain Teaching Agent.
+  gold_node_ids: &id016
+  - 3be0646c986e
+  - 289bd8add3ae
+  relevance_by_id: &id017
+    3be0646c986e: 3.0
+    289bd8add3ae: 2.0
+  hard_negative_node_ids: &id018 []
+- query: What are the core ideas behind Teaching Agent, and how does it connect to
+    related topics?
+  gold_node_ids: *id016
+  relevance_by_id: *id017
+  hard_negative_node_ids: *id018
+- query: When should I use Teaching Agent, and what closely related concept should
+    I avoid confusing it with?
+  gold_node_ids: *id016
+  relevance_by_id: *id017
+  hard_negative_node_ids: *id018
+- query: Compare Teaching Agent with its prerequisite concepts and explain their relationship.
   gold_node_ids:
   - 3be0646c986e
+  - 289bd8add3ae
+  relevance_by_id: *id017
+  hard_negative_node_ids: *id018
+- query: Disambiguate Teaching Agent from similar terms and provide one concrete example.
+  gold_node_ids: *id016
+  relevance_by_id: *id017
+  hard_negative_node_ids: *id018

@@ -7,6 +7,9 @@ import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage';
 import ChatPage from './pages/ChatPage';
 import ProgressPage from './pages/ProgressPage';
+import QuizPage from './pages/QuizPage';
+import ResultsPage from './pages/ResultsPage';
+import UploadPage from './pages/UploadPage';
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -58,6 +61,30 @@ export default function App() {
         element={
           <ProtectedRoute>
             <AppLayout><ProgressPage /></AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/quiz"
+        element={
+          <ProtectedRoute>
+            <AppLayout><QuizPage /></AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/results"
+        element={
+          <ProtectedRoute>
+            <AppLayout><ResultsPage /></AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/upload"
+        element={
+          <ProtectedRoute>
+            <AppLayout><UploadPage /></AppLayout>
           </ProtectedRoute>
         }
       />

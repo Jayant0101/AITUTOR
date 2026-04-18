@@ -4,10 +4,12 @@ import os
 import uuid
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, UploadFile, File
+from fastapi import Depends, FastAPI, HTTPException, UploadFile, File, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
+import time
 load_dotenv()
 
 from app.api.auth import (
@@ -21,6 +23,7 @@ import logging
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+from app.debug_log import debug_log
 from app.schemas import (
     ChatRequest,
     ChatResponse,
@@ -41,6 +44,14 @@ from app.llm.assistant_service import LearningAssistantService
 from app.integrations.multimodal.parser import MultimodalParser
 from app.integrations.multimodal.store import FileStore
 from app.integrations.youtube.client import YouTubeSearchClient
+from app.services.quiz_engine import QuizEngine
+# New modular routers
+from app.api.routes import (
+    chat_router,
+    quiz_router,
+    learner_router,
+    ingestion_router,
+)
 
 
 def _default_data_dir() -> str:
@@ -75,6 +86,12 @@ def _hydrate_attachments(raw: list[dict]) -> list[dict]:
                 parsed = file_parser.parse_pdf(record["path"])
             elif str(record.get("content_type", "")).startswith("image/"):
                 parsed = file_parser.parse_image(record["path"])
+            elif str(record.get("content_type", "")).startswith("text/"):
+                try:
+                    with open(record["path"], "r", encoding="utf-8") as f:
+                        parsed = {"text": f.read()}
+                except Exception:
+                    parsed = {"text": ""}
             attachments.append(
                 {
                     "id": file_id,
@@ -101,14 +118,68 @@ app = FastAPI(
     ),
 )
 
-# CORS — allow the React frontend in development and production
+# Configure CORS from environment variable or default to localhost
+cors_origins_str = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000,http://localhost")
+cors_origins = [o.strip() for o in cors_origins_str.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000").split(","),
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Phase 3: Basic Rate Limiting (In-memory)
+RATE_LIMIT_WINDOW = 60  # seconds
+RATE_LIMIT_MAX_REQUESTS = 60  # requests per minute
+request_history: dict[str, list[float]] = {}
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    # Only limit API routes
+    if not request.url.path.startswith("/"):
+        return await call_next(request)
+        
+    client_ip = request.client.host if request.client else "unknown"
+    now = time.time()
+    
+    # Initialize history for IP
+    if client_ip not in request_history:
+        request_history[client_ip] = []
+        
+    # Clean up old requests
+    request_history[client_ip] = [
+        t for t in request_history[client_ip] 
+        if now - t < RATE_LIMIT_WINDOW
+    ]
+    
+    if len(request_history[client_ip]) >= RATE_LIMIT_MAX_REQUESTS:
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Too many requests. Please try again later."},
+            headers={"Retry-After": str(RATE_LIMIT_WINDOW)}
+        )
+        
+    request_history[client_ip].append(now)
+    return await call_next(request)
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start_time = time.time()
+    response = await call_next(request)
+    process_time = time.time() - start_time
+    logger.info(f"{request.method} {request.url.path} - {response.status_code} - {process_time:.4f}s")
+    return response
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    # Phase 4: Enhanced error logging
+    logger.error(f"Global exception on {request.method} {request.url.path}: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An internal server error occurred."},
+    )
 
 service = LearningAssistantService(
     data_dir=_resolve_path(os.getenv("DATA_DIR", _default_data_dir())),
@@ -121,18 +192,103 @@ file_store.initialize()
 file_parser = MultimodalParser()
 youtube_client = YouTubeSearchClient(api_key=os.getenv("YOUTUBE_API_KEY", ""))
 
+# Production/test robustness: initialize schema + KB immediately.
+# This avoids reliance on lifespan startup execution in all test harnesses.
+service.initialize()
+
+# ── Quiz Engine (shares the knowledge graph with the service) ────────────
+quiz_engine = QuizEngine(
+    knowledge_graph=service.knowledge_graph, 
+    learner=service.learner
+)
+
+# ── Operational Endpoints ──────────────────────────────────────────
+
+@app.get("/health")
+async def health_check():
+    """Liveness/readiness probe for production monitoring."""
+    snapshot = service.health_snapshot()
+    return {
+        "status": "healthy",
+        "timestamp": time.time(),
+        "version": "0.2.1",
+        "service": "socratiq-backend",
+        **snapshot
+    }
+
+@app.get("/api/analytics/summary")
+async def get_analytics_summary(current: dict = Depends(get_current_user)):
+    """
+    Protected endpoint for product operators to view usage metrics.
+    In a real-world scenario, this would be restricted to admin roles.
+    """
+    # For now, we aggregate from the learner tracker
+    try:
+        # We need a small helper in the learner tracker for this
+        summary = service.learner.get_system_wide_stats()
+        return {
+            "status": "success",
+            "data": summary
+        }
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"Failed to fetch analytics: {e}")
+        raise HTTPException(status_code=500, detail="Analytics retrieval failed")
+
+@app.get("/api/analytics/user/{user_id}")
+async def get_user_analytics(user_id: str, current: dict = Depends(get_current_user)):
+    """Compute learning insights for a specific user (Phase 3)."""
+    # Authorization check: only allow users to see their own analytics
+    if current["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden: You can only access your own analytics.")
+    
+    try:
+        analytics = service.learner.get_user_analytics(user_id)
+        return {
+            "status": "success",
+            "data": analytics
+        }
+    except Exception as e:
+        logger.error(f"Failed to fetch user analytics: {e}")
+        raise HTTPException(status_code=500, detail="User analytics retrieval failed")
+
+@app.post("/api/feedback")
+async def submit_feedback(data: dict, current: dict = Depends(get_current_user)):
+    """Collect real user feedback (Phase 2)."""
+    user_id = current.get("user_id")
+    feedback_text = data.get("feedback")
+    rating = data.get("rating")
+    
+    import logging
+    logging.getLogger(__name__).info(f"USER_FEEDBACK: user={user_id} rating={rating} text='{feedback_text}'")
+    
+    # Store in DB
+    service.learner.record_feedback(user_id, feedback_text, rating)
+    
+    return {"status": "success", "message": "Feedback received. Thank you!"}
+
+# ── Register modular routers ───────────────────────────────────────
+app.include_router(chat_router)
+app.include_router(quiz_router)
+app.include_router(learner_router)
+app.include_router(ingestion_router)
+
 
 @app.on_event("startup")
 def on_startup() -> None:
+    if getattr(service, "_initialized", False):
+        return
+    debug_log(
+        hypothesisId="A",
+        message="startup_init_start",
+        data={"data_dir": str(service.data_dir), "db_path": str(service.db_path)},
+    )
     service.initialize()
-
-
-# ──────────────────────────────────────────────────────────
-# Health
-# ──────────────────────────────────────────────────────────
-@app.get("/health")
-def health() -> dict:
-    return service.health_snapshot()
+    debug_log(
+        hypothesisId="A",
+        message="startup_init_done",
+        data={"nodes": service.knowledge_graph.graph.number_of_nodes()},
+    )
 
 
 # ──────────────────────────────────────────────────────────
@@ -177,6 +333,14 @@ def login(body: LoginRequest) -> TokenResponse:
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
         token = create_access_token({"sub": user["id"], "email": user["email"]})
+        
+        # Phase 1: Track user login
+        service.learner.track_event(
+            user_id=user["id"],
+            event_type="user_login",
+            metadata={"email": user["email"]}
+        )
+
         return TokenResponse(
             access_token=token,
             user_id=user["id"],
@@ -212,122 +376,4 @@ def ingest(request: IngestRequest, current: dict = Depends(get_current_user)) ->
     return {"status": "ok", **result}
 
 
-# ──────────────────────────────────────────────────────────
-# Chat & Quiz — protected by JWT
-# ──────────────────────────────────────────────────────────
-@app.post("/chat", response_model=ChatResponse)
-def chat(request: ChatRequest, current: dict = Depends(get_current_user)) -> ChatResponse:
-    if not request.query.strip():
-        raise HTTPException(status_code=400, detail="query must not be empty")
 
-    payload = service.answer_query(
-        user_id=current["user_id"],
-        query=request.query,
-        top_k=request.top_k,
-        mode=request.mode,
-        attachments=_hydrate_attachments(request.attachments),
-    )
-    return ChatResponse(**payload)
-
-
-@app.post("/chat/stream")
-def chat_stream(request: ChatRequest, current: dict = Depends(get_current_user)) -> StreamingResponse:
-    payload = service.answer_query(
-        user_id=current["user_id"],
-        query=request.query,
-        top_k=request.top_k,
-        mode=request.mode,
-        attachments=_hydrate_attachments(request.attachments),
-    )
-    text = payload.get("result", {}).get("text", "")
-
-    def event_stream():
-        for token in text.split(" "):
-            yield token + " "
-
-    return StreamingResponse(event_stream(), media_type="text/plain")
-
-
-@app.post("/quiz/submit", response_model=QuizSubmitResponse)
-def submit_quiz(request: QuizSubmitRequest, current: dict = Depends(get_current_user)) -> QuizSubmitResponse:
-    payload = service.submit_quiz(
-        user_id=current["user_id"],
-        node_id=request.node_id,
-        question=request.question,
-        expected_answer=request.expected_answer,
-        user_answer=request.user_answer,
-        difficulty=request.difficulty,
-    )
-    return QuizSubmitResponse(**payload)
-
-
-@app.post("/quiz/generate", response_model=QuizGenerateResponse)
-def generate_quiz(request: QuizGenerateRequest, current: dict = Depends(get_current_user)) -> QuizGenerateResponse:
-    attachments = []
-    for file_id in request.file_ids:
-        record = file_store.get_file(file_id)
-        if not record:
-            continue
-        parsed = {}
-        if record.get("content_type") == "application/pdf":
-            parsed = file_parser.parse_pdf(record["path"])
-        elif str(record.get("content_type", "")).startswith("image/"):
-            parsed = file_parser.parse_image(record["path"])
-        attachments.append({"id": file_id, "name": record.get("name", ""), "text": parsed.get("text", "")})
-
-    if not attachments:
-        raise HTTPException(status_code=400, detail="No valid files for quiz generation")
-
-    text = attachments[0].get("text", "").strip()
-    summary = text.split(".")[0][:240] if text else "Review the attached material."
-    return QuizGenerateResponse(
-        question="Summarize the key concept from your uploaded material.",
-        expected_answer=summary or "Review the uploaded material and provide a summary.",
-        difficulty="medium",
-        citations=[{"heading": attachments[0].get("name", "Uploaded file"), "source": "upload"}],
-    )
-
-
-@app.post("/files/upload", response_model=FileUploadResponse)
-def upload_file(file: UploadFile = File(...), current: dict = Depends(get_current_user)) -> FileUploadResponse:
-    file_id = str(uuid.uuid4())
-    suffix = Path(file.filename).suffix if file.filename else ""
-    target_path = uploads_dir / f"{file_id}{suffix}"
-
-    with target_path.open("wb") as handle:
-        handle.write(file.file.read())
-
-    size = target_path.stat().st_size
-    file_store.add_file(
-        file_id=file_id,
-        name=file.filename or "upload",
-        content_type=file.content_type or "application/octet-stream",
-        size=size,
-        path=str(target_path),
-    )
-
-    return FileUploadResponse(
-        id=file_id,
-        name=file.filename or "upload",
-        content_type=file.content_type or "application/octet-stream",
-        size=size,
-    )
-
-
-@app.post("/search/youtube", response_model=YouTubeSearchResponse)
-def search_youtube(request: YouTubeSearchRequest, current: dict = Depends(get_current_user)) -> YouTubeSearchResponse:
-    results = youtube_client.search(request.query, max_results=1)
-    if not results:
-        raise HTTPException(status_code=404, detail="No YouTube results")
-    top = results[0]
-    return YouTubeSearchResponse(
-        title=top.get("title", ""),
-        url=top.get("url", ""),
-        channel=top.get("channel", ""),
-        snippet=top.get("snippet", ""),
-    )
-
-
-@app.get("/learner/progress")
-def learner_progress(current: dict = Depends(get_current_user)) -> dict:
-    return service.learner_progress(user_id=current["user_id"])
