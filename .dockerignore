@@ -1,17 +1,39 @@
+# Build files
 .git
 .gitignore
 .dockerignore
-node_modules
 __pycache__
-.venv
-venv
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.toast
+.lucid
 .env
 .env.*
-backend/uploads
+
+# Local data and logs
 backend/learner.db
+backend/uploads/*
+!backend/uploads/.gitkeep
+data/
+logs/
+*.log
+
+# Project specific
 .planning
-docs
-evaluation
+docs/
+evaluation/
 README.md
 LICENSE
 .env.template
+PRODUCTION_DEPLOYMENT.md
+
+# Frontend
+frontend/
+node_modules/
