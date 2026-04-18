@@ -5,6 +5,7 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PORT=8000
+ENV PYTHONPATH=/app
 
 # Install system dependencies for PostgreSQL and building packages
 RUN apt-get update && apt-get install -y \
@@ -27,5 +28,5 @@ RUN mkdir -p uploads
 
 EXPOSE 8000
 
-# Use shell form to allow environment variable expansion
-CMD gunicorn -w 4 -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:$PORT
+# Start the application
+CMD uvicorn app.main:app --host 0.0.0.0 --port $PORT

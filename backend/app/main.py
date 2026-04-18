@@ -181,20 +181,27 @@ async def global_exception_handler(request: Request, exc: Exception):
         content={"detail": "An internal server error occurred."},
     )
 
+logger.info("Initializing LearningAssistantService...")
 service = LearningAssistantService(
     data_dir=_resolve_path(os.getenv("DATA_DIR", _default_data_dir())),
     db_path=_resolve_path(os.getenv("LEARNER_DB_PATH", _default_db_path())),
 )
+logger.info("Setting up uploads directory...")
 uploads_dir = Path(_resolve_path(os.getenv("UPLOAD_DIR", _default_upload_dir())))
 uploads_dir.mkdir(parents=True, exist_ok=True)
+logger.info("Initializing FileStore...")
 file_store = FileStore(db_path=service.db_path)
 file_store.initialize()
+logger.info("Initializing MultimodalParser...")
 file_parser = MultimodalParser()
+logger.info("Initializing YouTubeSearchClient...")
 youtube_client = YouTubeSearchClient(api_key=os.getenv("YOUTUBE_API_KEY", ""))
 
 # Production/test robustness: initialize schema + KB immediately.
 # This avoids reliance on lifespan startup execution in all test harnesses.
+logger.info("Running service.initialize()...")
 service.initialize()
+logger.info("Service initialized successfully.")
 
 # ── Quiz Engine (shares the knowledge graph with the service) ────────────
 quiz_engine = QuizEngine(
