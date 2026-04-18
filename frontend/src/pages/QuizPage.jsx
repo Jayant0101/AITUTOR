@@ -21,7 +21,7 @@ export default function QuizPage() {
 
   // Prevention of refresh loss
   useEffect(() => {
-    const saved = localStorage.getItem('socratiq_active_quiz');
+    const saved = localStorage.getItem('aitutor_active_quiz');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -48,7 +48,7 @@ export default function QuizPage() {
 
   useEffect(() => {
     if (quizData) {
-      localStorage.setItem('socratiq_active_quiz', JSON.stringify({
+      localStorage.setItem('aitutor_active_quiz', JSON.stringify({
         topic,
         difficulty,
         quizData,
@@ -108,14 +108,14 @@ export default function QuizPage() {
       );
       
       const result = await quizApi.submit(quizData.quiz_id, answerArray, timeTaken);
-      localStorage.removeItem('socratiq_active_quiz');
+      localStorage.removeItem('aitutor_active_quiz');
       // Navigate to results
       navigate('/results', { state: { result, quizData, answerArray, timeTaken } });
     } catch (err) {
       // Phase 2: Handle "Quiz not found" (server restart) by allowing retry
       if (err.message?.includes('not found')) {
         setError('Your session expired or the server restarted. Please start a new quiz.');
-        localStorage.removeItem('socratiq_active_quiz');
+        localStorage.removeItem('aitutor_active_quiz');
       } else {
         setError('Submission failed: ' + err.message);
       }

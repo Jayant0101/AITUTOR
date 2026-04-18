@@ -1,7 +1,7 @@
 {
   "info": {
-    "name": "SocratiQ AI Learning Platform",
-    "description": "Complete API collection for the SocratiQ AI Learning Platform.\n\nSetup:\n1. Import this collection and the environment file into Postman.\n2. Run 'Register User' then 'Login User' — the token is saved automatically.\n3. Upload a document via 'Upload Document', then test Chat and Quiz endpoints.",
+    "name": "AI Tutor AI Learning Platform",
+    "description": "Complete API collection for the AI Tutor AI Learning Platform.\n\nSetup:\n1. Import this collection and the environment file into Postman.\n2. Run 'Register User' then 'Login User' — the token is saved automatically.\n3. Upload a document via 'Upload Document', then test Chat and Quiz endpoints.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [

@@ -5,19 +5,12 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PORT=8000
-
-# Install system dependencies for PostgreSQL and building packages
-RUN apt-get update && apt-get install -y \
-    libpq-dev \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
+ENV PYTHONPATH=/app
 
 # Copy requirements and install python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Download spacy model
-RUN python -m spacy download en_core_web_sm
+RUN pip install --no-cache-dir -r requirements.txt \
+    && python -m spacy download en_core_web_sm
 
 # Copy the rest of the backend application code
 COPY . .

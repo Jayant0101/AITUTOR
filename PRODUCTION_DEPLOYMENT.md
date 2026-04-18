@@ -1,6 +1,6 @@
-# SocratiQ Production Deployment Guide
+# AI Tutor Production Deployment Guide
 
-This guide provides the necessary steps and configurations to deploy the SocratiQ AI Learning Platform to a production environment using **Railway**, **Vercel**, and **Supabase**.
+This guide provides the necessary steps and configurations to deploy the AI Tutor AI Learning Platform to a production environment using **Railway**, **Vercel**, and **Supabase**.
 
 ---
 
@@ -31,7 +31,7 @@ This guide provides the necessary steps and configurations to deploy the Socrati
    - `GEMINI_API_KEY`: Your Google Gemini API key.
    - `TAVILY_API_KEY`: Your Tavily Search API key.
    - `SECRET_KEY`: A long, random string for JWT signing.
-   - `CORS_ORIGINS`: `https://your-socratiq-app.vercel.app` (Your Vercel URL).
+   - `CORS_ORIGINS`: `https://your-aitutor-app.vercel.app` (Your Vercel URL).
    - `ENV`: `production`
    - `PORT`: `8000`
 5. **Deploy**: Railway will automatically build and deploy using the Dockerfile.

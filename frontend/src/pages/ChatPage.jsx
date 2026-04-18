@@ -58,7 +58,7 @@ export default function ChatPage() {
   }, [messages, streamingId, loading]);
 
   useEffect(() => {
-    const stored = localStorage.getItem('socratiq_chat_history');
+    const stored = localStorage.getItem('aitutor_chat_history');
     if (stored) {
       try {
         const parsed = JSON.parse(stored);
@@ -66,14 +66,14 @@ export default function ChatPage() {
           setMessages(parsed.slice(-60));
         }
       } catch (err) {
-        localStorage.removeItem('socratiq_chat_history');
+        localStorage.removeItem('aitutor_chat_history');
       }
     }
   }, []);
 
   useEffect(() => {
     if (!messages.length) return;
-    localStorage.setItem('socratiq_chat_history', JSON.stringify(messages.slice(-60)));
+    localStorage.setItem('aitutor_chat_history', JSON.stringify(messages.slice(-60)));
   }, [messages]);
 
   useEffect(() => {

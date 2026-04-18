@@ -7,18 +7,10 @@ ENV PYTHONUNBUFFERED=1
 ENV PORT=8000
 ENV PYTHONPATH=/app
 
-# Install system dependencies for PostgreSQL and building packages
-RUN apt-get update && apt-get install -y \
-    libpq-dev \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
-
 # Copy requirements and install python dependencies
 COPY backend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Download spacy model
-RUN python -m spacy download en_core_web_sm
+RUN pip install --no-cache-dir -r requirements.txt \
+    && python -m spacy download en_core_web_sm
 
 # Copy the backend application code
 COPY backend/ .

@@ -6,7 +6,7 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
 function getHeaders() {
   const headers = { 'Content-Type': 'application/json' };
-  const token = localStorage.getItem('socratiq_token');
+  const token = localStorage.getItem('aitutor_token');
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
@@ -44,7 +44,7 @@ async function request(method, path, body = null) {
 }
 
 async function uploadRequest(path, file) {
-  const token = localStorage.getItem('socratiq_token');
+  const token = localStorage.getItem('aitutor_token');
   const form = new FormData();
   form.append('file', file);
 

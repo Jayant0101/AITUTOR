@@ -1,6 +1,6 @@
-# SocratiQ: Vectorless Research-Grade Learning Assistant
+# AI Tutor: Vectorless Research-Grade Learning Assistant
 
-SocratiQ is a production-ready, research-first AI tutoring system centered on vectorless retrieval, a knowledge graph, and a learner model. It provides grounded Socratic teaching with measurable learning outcomes, supporting product features such as a modern React UI, streaming responses, multimodal uploads, and YouTube grounding.
+AI Tutor is a production-ready, research-first AI tutoring system centered on vectorless retrieval, a knowledge graph, and a learner model. It provides grounded Socratic teaching with measurable learning outcomes, supporting product features such as a modern React UI, streaming responses, multimodal uploads, and YouTube grounding.
 
 ---
 
@@ -14,7 +14,7 @@ The system has undergone rigorous testing, stabilization, and hardening.
 
 ---
 
-## 🛠 User Walkthrough: How to Use SocratiQ
+## 🛠 User Walkthrough: How to Use AI Tutor
 
 ### 1. Ingestion & Onboarding
 - **Register/Login**: Securely access your personalized learning environment.
@@ -25,7 +25,7 @@ The system has undergone rigorous testing, stabilization, and hardening.
 - **Socratic Tutoring**: The AI won't just give answers; it will guide you through concepts, checking your understanding step-by-step.
 
 ### 3. Knowledge Validation
-- **Generate Quizzes**: Request a quiz on any topic. SocratiQ generates 10 adaptive MCQs based on your mastery level.
+- **Generate Quizzes**: Request a quiz on any topic. AI Tutor generates 10 adaptive MCQs based on your mastery level.
 - **Timed Testing**: Complete quizzes under a timer to simulate real-world testing conditions.
 - **Personalized Feedback**: Receive detailed explanations for every answer, mapped back to the source documents.
 
@@ -87,7 +87,7 @@ flowchart TD
 
 ```mermaid
 graph TD
-    Root[socratiq-learning/] --> FE[frontend/]
+    Root[aitutor-learning/] --> FE[frontend/]
     Root --> BE[backend/]
     Root --> DOCS[docs/]
     Root --> DC[docker-compose.yml]
@@ -126,7 +126,7 @@ For detailed cloud deployment instructions (Render, Railway, AWS), see [DEPLOYME
 
 ## 📊 Operations & Maintenance
 
-SocratiQ includes built-in operational features for Phase 8 maintenance:
+AI Tutor includes built-in operational features for Phase 8 maintenance:
 
 - **Health Monitoring**: Use `/api/health` for liveness/readiness probes (returns status, DB info, and graph size).
 - **Usage Analytics**: View system-wide stats via `/api/analytics/summary` (protected).
@@ -148,7 +148,7 @@ SocratiQ includes built-in operational features for Phase 8 maintenance:
 
 ## 🧪 Research & Evaluation
 
-SocratiQ includes a research harness for measuring learning outcomes:
+AI Tutor includes a research harness for measuring learning outcomes:
 - **Metrics**: Precision@k, Groundedness, Hallucination Rate, Learning Gain.
 - **Reproducibility**: Seeded multi-run evaluations with statistical CI95 summaries.
 

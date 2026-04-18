@@ -41,7 +41,7 @@ def extract_content(url: str, *, max_chars: int | None = None) -> str:
         resp = requests.get(
             url,
             timeout=timeout_s,
-            headers={"User-Agent": "Mozilla/5.0 (compatible; SocratiqBot/1.0)"},
+            headers={"User-Agent": "Mozilla/5.0 (compatible; AITutorBot/1.0)"},
         )
         if resp.status_code != 200:
             return ""

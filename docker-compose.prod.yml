@@ -34,4 +34,4 @@ services:
 
 networks:
   default:
-    name: socratiq-network
+    name: ai-tutor-network

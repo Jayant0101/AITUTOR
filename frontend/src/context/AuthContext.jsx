@@ -8,7 +8,7 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem('socratiq_token');
+    const token = localStorage.getItem('aitutor_token');
     if (!token) {
       setLoading(false);
       return;
@@ -16,27 +16,27 @@ export function AuthProvider({ children }) {
     authApi.me()
       .then((u) => setUser(u))
       .catch(() => {
-        localStorage.removeItem('socratiq_token');
+        localStorage.removeItem('aitutor_token');
       })
       .finally(() => setLoading(false));
   }, []);
 
   const login = async (email, password) => {
     const data = await authApi.login(email, password);
-    localStorage.setItem('socratiq_token', data.access_token);
+    localStorage.setItem('aitutor_token', data.access_token);
     setUser({ user_id: data.user_id, email: data.email, display_name: data.display_name });
     return data;
   };
 
   const register = async (email, password, displayName) => {
     const data = await authApi.register(email, password, displayName);
-    localStorage.setItem('socratiq_token', data.access_token);
+    localStorage.setItem('aitutor_token', data.access_token);
     setUser({ user_id: data.user_id, email: data.email, display_name: data.display_name });
     return data;
   };
 
   const logout = () => {
-    localStorage.removeItem('socratiq_token');
+    localStorage.removeItem('aitutor_token');
     setUser(null);
   };
 

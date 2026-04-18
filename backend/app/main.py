@@ -110,7 +110,7 @@ def _hydrate_attachments(raw: list[dict]) -> list[dict]:
     return attachments
 
 app = FastAPI(
-    title="SocratiQ Learning Assistant API",
+    title="AI Tutor Learning Assistant API",
     version="0.2.0",
     description=(
         "Phase 1-5 implementation: ingestion, graph retrieval, learner model, "
@@ -219,7 +219,7 @@ async def health_check():
         "status": "healthy",
         "timestamp": time.time(),
         "version": "0.2.1",
-        "service": "socratiq-backend",
+        "service": "ai-tutor-backend",
         **snapshot
     }
 

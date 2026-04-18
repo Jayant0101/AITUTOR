@@ -39,7 +39,7 @@ export default function LoginPage() {
             <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 56, height: 56, borderRadius: 16, background: 'var(--gradient-primary)', marginBottom: 16, boxShadow: 'var(--shadow-glow)' }}>
               <Brain size={28} color="white" />
             </div>
-            <h1>SocratiQ</h1>
+            <h1>AI Tutor</h1>
             <p>AI-powered adaptive learning</p>
           </div>
 

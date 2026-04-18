@@ -19,8 +19,8 @@ export default function Sidebar() {
       <div style={styles.brand}>
         <div style={styles.brandIcon}><Brain size={24} /></div>
         <div>
-          <div style={styles.brandName}>SocratiQ</div>
-          <div style={styles.brandTag}>AI Tutor</div>
+          <div style={styles.brandName}>AI Tutor</div>
+          <div style={styles.brandTag}>Learning Assistant</div>
         </div>
       </div>
 
