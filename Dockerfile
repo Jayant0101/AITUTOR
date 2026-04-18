@@ -27,5 +27,5 @@ RUN mkdir -p uploads
 
 EXPOSE 8000
 
-# Use gunicorn with uvicorn workers for production stability
-CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "app.main:app", "--bind", "0.0.0.0:8000"]
+# Use shell form to allow environment variable expansion
+CMD gunicorn -w 4 -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:$PORT
