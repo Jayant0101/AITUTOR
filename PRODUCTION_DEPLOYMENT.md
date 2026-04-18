@@ -21,12 +21,10 @@ This guide provides the necessary steps and configurations to deploy the Socrati
    - Log in to [Railway](https://railway.app/).
    - Click **New Project > Deploy from GitHub repo**.
    - Select your `AITUTOR` repository.
-3. **Configuration (Automatic via railway.json)**:
-   - I have added a `railway.json` file to the root of the repository.
-   - Railway should now **automatically** detect that it needs to use the `backend` directory and the `Dockerfile`.
-   - If it doesn't auto-detect, go to **Settings > General** and manually set:
-     - **Root Directory**: `backend`
-     - **Builder**: `Dockerfile`
+3. **Configuration (Root Dockerfile)**:
+   - I have added a `Dockerfile` and `railway.json` to the **root** of the repository.
+   - Railway will now automatically detect the Docker project and build it.
+   - **CRITICAL**: Ensure **Root Directory** in Railway is set to `/` (the project root), NOT `backend`.
 4. **Environment Variables**:
    Go to the **Variables** tab and add:
    - `DATABASE_URL`: Your Supabase connection string.
