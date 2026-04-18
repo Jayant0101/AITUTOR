@@ -20,8 +20,12 @@ class LearnerTracker:
         self.database_url = os.getenv("DATABASE_URL")
         
         # Enforce PostgreSQL in Production (Phase 1)
-        # We assume production if ENV=production or if we are running in Render/Cloud
-        self.is_prod = os.getenv("ENV", "").lower() == "production" or os.getenv("RENDER")
+        # We assume production if ENV=production or if we are running in Render/Railway/Cloud
+        self.is_prod = (
+            os.getenv("ENV", "").lower() == "production" 
+            or os.getenv("RENDER") 
+            or os.getenv("RAILWAY_ENVIRONMENT")
+        )
         
         if self.is_prod:
             if not self.database_url:

@@ -17,7 +17,11 @@ class FileStore:
     def __init__(self, db_path: str) -> None:
         self.db_path = db_path
         self.database_url = os.getenv("DATABASE_URL")
-        self.is_prod = os.getenv("ENV", "").lower() == "production" or os.getenv("RENDER")
+        self.is_prod = (
+            os.getenv("ENV", "").lower() == "production" 
+            or os.getenv("RENDER") 
+            or os.getenv("RAILWAY_ENVIRONMENT")
+        )
         
         # Enforce PostgreSQL in Production (Phase 1)
         if self.is_prod:
