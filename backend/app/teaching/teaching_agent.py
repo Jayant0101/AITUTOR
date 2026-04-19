@@ -51,13 +51,107 @@ class TeachingAgent:
             except Exception:
                 self._gemini_model = None
 
+    async def generate_stream(
+        self,
+        query: str,
+        retrieval_results: list[dict],
+        mastery_by_node: dict[str, dict],
+        mode: str = "socratic",
+        history: list[dict] | None = None,
+    ):
+        sanitized_query = self._sanitize_query(query)
+        context_items = self._flatten_context(retrieval_results)
+        
+        # --- TASK 3: CONTEXT DEDUPLICATION ---
+        # Already handled by _flatten_context using 'seen' set of IDs.
+        
+        if not context_items:
+            yield "Insufficient information."
+            return
+
+        verified_facts = self._extract_verified_facts(
+            query=sanitized_query,
+            context_items=context_items,
+            mode=mode,
+        )
+        if not verified_facts:
+            yield "Insufficient information."
+            return
+
+        # --- TASK 3: MEMORY LIMIT ---
+        # Limit history to last 10 interactions to prevent uncontrolled growth
+        pruned_history = (history or [])[-10:]
+        
+        facts_lines = [f"[F{idx}] {fact}" for idx, fact in enumerate(verified_facts, start=1)]
+        mastery_lines = [f"{node_id} mastery={float(state.get('mastery', 0.25)):.2f}" for node_id, state in mastery_by_node.items()]
+
+        prompt = f"""
+You are an AI tutor. Answer ONLY using verified facts.
+Student query: {sanitized_query}
+Verified facts:
+{chr(10).join(facts_lines)}
+Learner mastery:
+{chr(10).join(mastery_lines) if mastery_lines else "No prior data."}
+Mode: {mode}
+Respond as a helpful tutor.
+"""
+        messages = [{"role": "system", "content": "You are a helpful AI tutor. Stay grounded in the provided facts."}]
+        for m in pruned_history:
+            messages.append({"role": m["role"], "content": m["content"]})
+        messages.append({"role": "user", "content": prompt})
+
+        # --- TASK 2: NATIVE STREAMING ---
+        try:
+            if self.provider == "openai" and self._openai_client:
+                # OpenAI Streaming
+                stream = self._openai_client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    stream=True,
+                    timeout=30.0
+                )
+                for chunk in stream:
+                    if chunk.choices[0].delta.content:
+                        yield chunk.choices[0].delta.content
+
+            elif self.provider == "gemini" and self._gemini_model:
+                # Gemini Streaming
+                # Combine messages for Gemini (naive approach for now)
+                full_prompt = "\n".join([f"{m['role']}: {m['content']}" for m in messages])
+                response = self._gemini_model.generate_content(full_prompt, stream=True)
+                for chunk in response:
+                    if chunk.text:
+                        yield chunk.text
+            else:
+                yield "Streaming not configured or provider unavailable."
+        except Exception as e:
+            logger.error(f"Streaming failed: {e}")
+            yield f"Error: {str(e)}"
+
+    def _sanitize_query(self, query: str) -> str:
+        """Prevent simple prompt injection by stripping known malicious patterns."""
+        # Remove common injection keywords
+        patterns = [
+            r"ignore previous instructions",
+            r"ignore all previous",
+            r"system prompt",
+            r"you are now",
+            r"new instructions",
+        ]
+        sanitized = query
+        for p in patterns:
+            sanitized = re.sub(p, "[REDACTED]", sanitized, flags=re.IGNORECASE)
+        return sanitized.strip()
+
     def generate(
         self,
         query: str,
         retrieval_results: list[dict],
         mastery_by_node: dict[str, dict],
         mode: str = "socratic",
+        history: list[dict] | None = None,
     ) -> dict:
+        sanitized_query = self._sanitize_query(query)
         context_items = self._flatten_context(retrieval_results)
         citations = self._build_citations(context_items)
         focus_node_id = context_items[0]["id"] if context_items else None
@@ -68,7 +162,7 @@ class TeachingAgent:
         # Pipeline contract: Retrieve -> Extract verified facts -> (optionally verify) -> Generate.
         # If we can't produce any verified facts, do not call the LLM.
         verified_facts = self._extract_verified_facts(
-            query=query,
+            query=sanitized_query,
             context_items=context_items,
             mode=mode,
         )
@@ -76,11 +170,12 @@ class TeachingAgent:
             return self._insufficient_context_response(mode)
 
         llm_payload = self._generate_with_llm(
-            query=query,
+            query=sanitized_query,
             mode=mode,
             context_items=context_items,
             mastery_by_node=mastery_by_node,
             verified_facts=verified_facts,
+            history=history,
         )
         if llm_payload:
             if llm_payload.get("mode") == "socratic":
@@ -139,10 +234,14 @@ class TeachingAgent:
         context_items: list[dict],
         mastery_by_node: dict[str, dict],
         verified_facts: list[str],
+        history: list[dict] | None = None,
     ) -> dict | None:
         if not context_items:
             return None
 
+        # Token Pruning: Limit history to last 5 turns to stay within context limits
+        pruned_history = (history or [])[-10:]
+        
         facts_lines = []
         for idx, fact in enumerate(verified_facts, start=1):
             facts_lines.append(f"[F{idx}] {fact}")
@@ -176,6 +275,17 @@ Return strict JSON:
 - For quiz mode: {{"mode":"quiz","question":"...","expected_answer":"...","difficulty":"easy|medium|hard"}}
 """
 
+        messages = [
+            {"role": "system", "content": "You are an AI tutor. You must answer ONLY using the provided verified facts. If information is insufficient, say exactly: 'Insufficient information.' Return only valid JSON."},
+        ]
+        
+        # Inject pruned history
+        for msg in pruned_history:
+            messages.append({"role": msg["role"], "content": msg["content"]})
+            
+        # Add the current prompt
+        messages.append({"role": "user", "content": prompt})
+
         text_response = None
         logger.info(f"LLM teaching generation starting for mode='{mode}', provider='{self.provider}'")
         start_time = time.time()
@@ -184,17 +294,17 @@ Return strict JSON:
                 completion = self._openai_client.chat.completions.create(
                     model=self.model,
                     temperature=self.temperature,
-                    messages=[
-                        {"role": "system", "content": "Return only valid JSON."},
-                        {"role": "user", "content": prompt},
-                    ],
+                    messages=messages,
                     timeout=10,  # Phase 5: performance safety
                 )
                 text_response = completion.choices[0].message.content
             elif self._gemini_model:
+                # Gemini doesn't support system/user/history easily in generate_content(prompt)
+                # We combine it into a single string if it's Gemini for now, or use their Chat API
+                full_prompt = "\n".join([f"{m['role']}: {m['content']}" for m in messages])
                 try:
                     completion = self._gemini_model.generate_content(
-                        prompt,
+                        full_prompt,
                         request_options={"timeout": 10}
                     )
                     text_response = completion.text

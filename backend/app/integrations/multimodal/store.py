@@ -162,11 +162,11 @@ class FileStore:
         with self._connect() as conn:
             if self.is_postgres:
                 cur = conn.cursor()
-                cur.execute("SELECT * FROM uploaded_files WHERE id = %s", (file_id,))
+                cur.execute("SELECT id, name, content_type, size, path, created_at FROM uploaded_files WHERE id = %s", (file_id,))
                 row = cur.fetchone()
             else:
                 row = conn.execute(
-                    "SELECT * FROM uploaded_files WHERE id = ?",
+                    "SELECT id, name, content_type, size, path, created_at FROM uploaded_files WHERE id = ?",
                     (file_id,),
                 ).fetchone()
         return dict(row) if row else None

@@ -44,6 +44,7 @@ def chat_query(
             top_k=request.top_k,
             mode=request.mode,
             attachments=_hydrate_attachments(request.attachments),
+            history=[msg.dict() for msg in request.history],
         )
 
         # Phase 1: Track chat query
@@ -73,7 +74,7 @@ def chat_query(
 
 
 @router.post("/stream", summary="Streaming chat response")
-def chat_stream(
+async def chat_stream(
     request: ChatRequest,
     current: dict = Depends(get_current_user),
 ) -> StreamingResponse:
@@ -83,30 +84,34 @@ def chat_stream(
     try:
         svc = _get_service()
         from app.main import _hydrate_attachments
-        payload = svc.answer_query(
-            user_id=current["user_id"],
-            query=request.query,
-            top_k=request.top_k,
-            mode=request.mode,
-            attachments=_hydrate_attachments(request.attachments),
-        )
+        
+        # --- TASK 2: REAL AI STREAMING ---
+        async def event_stream():
+            try:
+                # Use the new streaming method in service
+                async for chunk in svc.answer_query_stream(
+                    user_id=current["user_id"],
+                    query=request.query,
+                    top_k=request.top_k,
+                    mode=request.mode,
+                    attachments=_hydrate_attachments(request.attachments),
+                    history=[msg.dict() for msg in request.history],
+                ):
+                    yield chunk
+            except asyncio.CancelledError:
+                import logging
+                logging.getLogger(__name__).info("Chat stream client disconnected")
+                raise
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error(f"Stream error: {e}")
+                yield f"Error: {str(e)}"
 
-        if payload.get("status") == "no_data":
-            text = payload.get("message", "No relevant documents found.")
-        elif payload.get("status") == "error":
-            text = f"Error: {payload.get('message', 'LLM failed')}"
-        else:
-            text = payload.get("result", {}).get("text", "")
-
-        def event_stream():
-            for token in text.split(" "):
-                yield token + " "
-
-        return StreamingResponse(event_stream(), media_type="text/plain")
+        return StreamingResponse(event_stream(), media_type="text/event-stream")
     except Exception as e:
         import logging
-        logging.getLogger(__name__).exception("Chat stream failed")
-        raise HTTPException(status_code=500, detail="Streaming failed")
+        logging.getLogger(__name__).exception("Chat stream setup failed")
+        raise HTTPException(status_code=500, detail="Streaming setup failed")
     
 @router.post("/quiz/submit", response_model=dict, summary="Submit a socratic chat quiz answer")
 def submit_chat_quiz(

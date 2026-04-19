@@ -7,6 +7,12 @@ ENV PYTHONUNBUFFERED=1
 ENV PORT=8000
 ENV PYTHONPATH=/app
 
+# Install system dependencies for psycopg2 and spacy
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy requirements and install python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt \

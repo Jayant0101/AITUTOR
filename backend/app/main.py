@@ -4,13 +4,52 @@ import os
 import uuid
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, UploadFile, File, Request
+from fastapi import Depends, FastAPI, HTTPException, UploadFile, File, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.exceptions import RequestValidationError
+from upstash_redis import Redis
 from dotenv import load_dotenv
 import time
+import sentry_sdk
+from sentry_sdk.integrations.fastapi import FastApiIntegration
+
 load_dotenv()
+
+# --- BONUS: MONITORING (SENTRY) ---
+SENTRY_DSN = os.getenv("SENTRY_DSN")
+if SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        integrations=[FastApiIntegration()],
+        traces_sample_rate=1.0,
+        profiles_sample_rate=1.0,
+        environment=os.getenv("ENV", "development")
+    )
+
+# --- TASK 7: ENV VALIDATION ---
+REQUIRED_ENVS = [
+    "GEMINI_API_KEY",
+    "DATABASE_URL",
+]
+
+# Redis is optional for minimal deployment
+OPTIONAL_ENVS = [
+    "UPSTASH_REDIS_REST_URL",
+    "UPSTASH_REDIS_REST_TOKEN"
+]
+
+def validate_env():
+    missing = [env for env in REQUIRED_ENVS if not os.getenv(env)]
+    if missing:
+        import sys
+        print(f"CRITICAL: Missing required environment variables: {', '.join(missing)}")
+        # In production, we should exit
+        if os.getenv("ENV") == "production":
+            sys.exit(1)
+
+validate_env()
 
 from app.api.auth import (
     create_access_token,
@@ -20,9 +59,10 @@ from app.api.auth import (
 )
 import logging
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# --- BONUS: LOGGING STANDARDIZATION ---
+LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
+logger = logging.getLogger("api")
 from app.debug_log import debug_log
 from app.schemas import (
     ChatRequest,
@@ -130,55 +170,117 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Phase 3: Basic Rate Limiting (In-memory)
-RATE_LIMIT_WINDOW = 60  # seconds
-RATE_LIMIT_MAX_REQUESTS = 60  # requests per minute
-request_history: dict[str, list[float]] = {}
+# --- TASK 6: REDIS RATE LIMITING ---
+redis_url = os.getenv("UPSTASH_REDIS_REST_URL")
+redis_token = os.getenv("UPSTASH_REDIS_REST_TOKEN")
+redis = None
+if redis_url and redis_token:
+    redis = Redis(url=redis_url, token=redis_token)
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
-    # Only limit API routes
-    if not request.url.path.startswith("/"):
+    # Skip if redis not configured or not an API route
+    if not redis or not request.url.path.startswith("/api") or request.url.path == "/health":
         return await call_next(request)
         
-    client_ip = request.client.host if request.client else "unknown"
-    now = time.time()
+    # Use user_id if authenticated, otherwise IP
+    # We try to get user_id from the request state if it was set by auth middleware
+    # But since auth happens in dependency, we use IP for now or check headers
+    identifier = request.client.host if request.client else "unknown"
     
-    # Initialize history for IP
-    if client_ip not in request_history:
-        request_history[client_ip] = []
+    # Consistent with frontend: 20 req/min
+    # Upstash Redis rate limit implementation
+    key = f"ratelimit:backend:{identifier}"
+    try:
+        # Simple sliding window implementation with Redis
+        # In production, use a library like 'slowapi' but here we follow the user's custom requirement
+        # to use Redis consistently with the frontend.
+        now = int(time.time())
+        window = 60
+        limit = 20
         
-    # Clean up old requests
-    request_history[client_ip] = [
-        t for t in request_history[client_ip] 
-        if now - t < RATE_LIMIT_WINDOW
-    ]
-    
-    if len(request_history[client_ip]) >= RATE_LIMIT_MAX_REQUESTS:
-        return JSONResponse(
-            status_code=429,
-            content={"detail": "Too many requests. Please try again later."},
-            headers={"Retry-After": str(RATE_LIMIT_WINDOW)}
-        )
+        # Multi-command for atomic update
+        # We use the REST client directly as it's simpler for Upstash
+        count = redis.get(key) or 0
+        if int(count) >= limit:
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "error": "Rate limit exceeded",
+                    "detail": "Too many requests. Please try again in a minute.",
+                    "limit": limit
+                },
+                headers={"Retry-After": str(window)}
+            )
         
-    request_history[client_ip].append(now)
+        # Increment and set expiry if new
+        redis.incr(key)
+        if int(count) == 0:
+            redis.expire(key, window)
+            
+    except Exception as e:
+        logger.error(f"Rate limit error: {e}")
+        # Fail open in case of Redis failure to maintain availability
+        pass
+
     return await call_next(request)
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
+    request_id = str(uuid.uuid4())
+    request.state.request_id = request_id
+    
     start_time = time.time()
     response = await call_next(request)
     process_time = time.time() - start_time
-    logger.info(f"{request.method} {request.url.path} - {response.status_code} - {process_time:.4f}s")
+    
+    # Try to get user_id from request state if set by dependency
+    user_id = getattr(request.state, "user_id", "anonymous")
+    
+    logger.info(
+        f"REQ_ID={request_id} USER_ID={user_id} {request.method} {request.url.path} "
+        f"- STATUS={response.status_code} - TIME={process_time:.4f}s"
+    )
+    
+    response.headers["X-Request-ID"] = request_id
     return response
+
+# --- TASK 1: STRUCTURED ERROR RESPONSES ---
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    logger.error(f"Validation error on {request.method} {request.url.path}: {exc.errors()}")
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={
+            "error": "Validation Error",
+            "detail": exc.errors(),
+            "message": "The request body or parameters are invalid."
+        },
+    )
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": "HTTP Error",
+            "detail": exc.detail,
+            "status_code": exc.status_code
+        },
+    )
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    # Phase 4: Enhanced error logging
     logger.error(f"Global exception on {request.method} {request.url.path}: {exc}", exc_info=True)
+    
+    # Structured error response for production
     return JSONResponse(
         status_code=500,
-        content={"detail": "An internal server error occurred."},
+        content={
+            "error": "Internal Server Error",
+            "message": "An unexpected error occurred. Our team has been notified.",
+            "trace_id": str(uuid.uuid4()) if os.getenv("ENV") == "production" else str(exc)
+        },
     )
 
 logger.info("Initializing LearningAssistantService...")
@@ -214,13 +316,32 @@ quiz_engine = QuizEngine(
 @app.get("/health")
 async def health_check():
     """Liveness/readiness probe for production monitoring."""
-    snapshot = service.health_snapshot()
+    try:
+        # Check DB connectivity
+        with service.learner._connect() as conn:
+            db_status = "connected"
+    except Exception as e:
+        logger.error(f"Health check DB failure: {e}")
+        db_status = f"unhealthy: {str(e)}"
+
+    try:
+        # Check Redis connectivity if configured
+        if redis:
+            redis.get("health-check")
+            redis_status = "connected"
+        else:
+            redis_status = "not_configured"
+    except Exception as e:
+        logger.error(f"Health check Redis failure: {e}")
+        redis_status = f"unhealthy: {str(e)}"
+
     return {
-        "status": "healthy",
+        "status": "healthy" if db_status == "connected" and (redis_status in ["connected", "not_configured"]) else "degraded",
         "timestamp": time.time(),
-        "version": "0.2.1",
-        "service": "ai-tutor-backend",
-        **snapshot
+        "version": "1.0.0",
+        "database": db_status,
+        "redis": redis_status,
+        "service": "ai-tutor-backend"
     }
 
 @app.get("/api/analytics/summary")

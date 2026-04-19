@@ -9,11 +9,17 @@ class IngestRequest(BaseModel):
     data_dir: str | None = None
 
 
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant", "system"]
+    content: str
+
+
 class ChatRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=1000)
     top_k: int = Field(default=3, ge=1, le=10)
     mode: Literal["socratic", "quiz"] = "socratic"
     attachments: list[dict] = Field(default_factory=list)
+    history: list[ChatMessage] = Field(default_factory=list)
 
 
 class ChatResponse(BaseModel):

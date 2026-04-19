@@ -97,6 +97,18 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> dict[str, Any]:
             detail="Token missing subject claim",
         )
 
+    # For middleware logging
+    from fastapi import Request
+    # This is a bit hacky but works for setting request state from dependency
+    # A better way is middleware, but we have dependencies for auth
+    import inspect
+    for frame in inspect.stack():
+        if 'request' in frame.frame.f_locals:
+            req = frame.frame.f_locals['request']
+            if isinstance(req, Request):
+                req.state.user_id = user_id
+                break
+
     # user_id is not secret; avoid logging token contents / user email.
     debug_log(hypothesisId="B", message="auth_user_decoded", data={"user_id": user_id})
     return {"user_id": user_id, "email": payload.get("email", "")}

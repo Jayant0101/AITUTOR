@@ -95,6 +95,48 @@ class LearningAssistantService:
         )
         return max_conf >= self._NO_DATA_CONFIDENCE_THRESHOLD
 
+    async def answer_query_stream(
+        self,
+        user_id: str,
+        query: str,
+        top_k: int = 3,
+        mode: str = "socratic",
+        attachments: list[dict] | None = None,
+        history: list[dict] | None = None,
+    ):
+        """Streaming version of answer_query."""
+        self.learner.ensure_user(user_id)
+        
+        retrieval_results = (
+            self.retrieval.search(query=query, top_n=max(top_k, 1), expand_depth=1)
+            if self.retrieval
+            else []
+        )
+        retrieval_results = self._select_high_quality_context(retrieval_results, requested_k=top_k)
+
+        if attachments:
+            retrieval_results = self._inject_attachment_context(
+                retrieval_results=retrieval_results, attachments=attachments
+            )
+
+        retrieval_results = apply_hybrid_retrieval(query, retrieval_results, top_k=top_k)
+
+        if not self._is_retrieval_sufficient(retrieval_results):
+            yield "No relevant documents found. Please upload a document to proceed."
+            return
+
+        node_ids = self._collect_node_ids(retrieval_results)
+        mastery_by_node = self.learner.get_mastery_by_node(user_id=user_id, node_ids=node_ids)
+
+        async for chunk in self.teacher.generate_stream(
+            query=query,
+            retrieval_results=retrieval_results,
+            mastery_by_node=mastery_by_node,
+            mode=mode,
+            history=history,
+        ):
+            yield chunk
+
     def answer_query(
         self,
         user_id: str,
@@ -102,6 +144,7 @@ class LearningAssistantService:
         top_k: int = 3,
         mode: str = "socratic",
         attachments: list[dict] | None = None,
+        history: list[dict] | None = None,
     ) -> dict:
         start_time = time.time()
         self.learner.ensure_user(user_id)
@@ -160,6 +203,7 @@ class LearningAssistantService:
                 retrieval_results=retrieval_results,
                 mastery_by_node=mastery_by_node,
                 mode=mode,
+                history=history,
             )
 
             # Determine sources list from citations for the success response.

@@ -446,11 +446,11 @@ class LearnerTracker:
         with self._connect() as conn:
             if self.is_postgres:
                 cur = conn.cursor()
-                cur.execute("SELECT * FROM users WHERE email = %s", (email,))
+                cur.execute("SELECT id, email, password_hash, display_name, created_at FROM users WHERE email = %s", (email,))
                 row = cur.fetchone()
             else:
                 row = conn.execute(
-                    "SELECT * FROM users WHERE email = ?", (email,)
+                    "SELECT id, email, password_hash, display_name, created_at FROM users WHERE email = ?", (email,)
                 ).fetchone()
         return dict(row) if row else None
 
@@ -459,11 +459,11 @@ class LearnerTracker:
         with self._connect() as conn:
             if self.is_postgres:
                 cur = conn.cursor()
-                cur.execute("SELECT * FROM users WHERE id = %s", (user_id,))
+                cur.execute("SELECT id, email, password_hash, display_name, created_at FROM users WHERE id = %s", (user_id,))
                 row = cur.fetchone()
             else:
                 row = conn.execute(
-                    "SELECT * FROM users WHERE id = ?", (user_id,)
+                    "SELECT id, email, password_hash, display_name, created_at FROM users WHERE id = ?", (user_id,)
                 ).fetchone()
         return dict(row) if row else None
 
@@ -477,7 +477,7 @@ class LearnerTracker:
                 cur = conn.cursor()
                 cur.execute(
                     f"""
-                    SELECT *
+                    SELECT user_id, node_id, mastery, attempts, correct_attempts, last_result, trend, last_review_at, next_review_at, last_interval_days, difficulty_bias
                     FROM nodes_mastery
                     WHERE user_id = %s AND node_id IN ({placeholders})
                     """,
@@ -489,7 +489,7 @@ class LearnerTracker:
             with self._connect() as conn:
                 rows = conn.execute(
                     f"""
-                    SELECT *
+                    SELECT user_id, node_id, mastery, attempts, correct_attempts, last_result, trend, last_review_at, next_review_at, last_interval_days, difficulty_bias
                     FROM nodes_mastery
                     WHERE user_id = ? AND node_id IN ({placeholders})
                     """,
@@ -814,7 +814,7 @@ class LearnerTracker:
                 cur = conn.cursor()
                 cur.execute(
                     """
-                    SELECT *
+                    SELECT user_id, node_id, mastery, attempts, correct_attempts, last_result, trend, last_review_at, next_review_at, last_interval_days, difficulty_bias
                     FROM nodes_mastery
                     WHERE user_id = %s
                     ORDER BY mastery ASC
@@ -839,7 +839,7 @@ class LearnerTracker:
             else:
                 rows = conn.execute(
                     """
-                    SELECT *
+                    SELECT user_id, node_id, mastery, attempts, correct_attempts, last_result, trend, last_review_at, next_review_at, last_interval_days, difficulty_bias
                     FROM nodes_mastery
                     WHERE user_id = ?
                     ORDER BY mastery ASC
@@ -935,7 +935,7 @@ class LearnerTracker:
 
                 # Upsert learner_profile: weighted update of mastery & avg_score
                 existing = conn.execute(
-                    "SELECT * FROM learner_profile WHERE user_id = ? AND topic = ?",
+                    "SELECT mastery_score, quizzes_taken, avg_score FROM learner_profile WHERE user_id = ? AND topic = ?",
                     (user_id, topic),
                 ).fetchone()
 
