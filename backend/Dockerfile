@@ -20,5 +20,5 @@ RUN mkdir -p uploads
 
 EXPOSE 8000
 
-# Use gunicorn with uvicorn workers for production stability
-CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "app.main:app", "--bind", "0.0.0.0:8000"]
+# Use gunicorn with uvicorn workers; PORT defaults to 8000 if not set by platform
+CMD sh -c "gunicorn -w ${WEB_CONCURRENCY:-4} -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:${PORT:-8000}"

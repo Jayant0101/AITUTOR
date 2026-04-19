@@ -19,21 +19,12 @@ class LearnerTracker:
         self.db_path = db_path
         self.database_url = os.getenv("DATABASE_URL")
         
-        # Enforce PostgreSQL in Production (Phase 1)
-        # We assume production if ENV=production or if we are running in Render/Railway/Cloud
-        self.is_prod = (
-            os.getenv("ENV", "").lower() == "production" 
-            or os.getenv("RENDER") 
-            or os.getenv("RAILWAY_ENVIRONMENT")
-        )
-        
-        if self.is_prod:
-            if not self.database_url:
-                logger.critical("DATABASE_URL is missing in production environment!")
-                raise RuntimeError("Production failure: DATABASE_URL must be set for PostgreSQL persistence.")
-            if not self.database_url.startswith("postgresql"):
-                logger.critical("DATABASE_URL must be a PostgreSQL connection string in production!")
-                raise RuntimeError("Production failure: SQLite is not allowed in production.")
+        # If DATABASE_URL is provided it must be a valid PostgreSQL URL; if it is
+        # absent the app falls back to SQLite so that a fresh Railway/Render deploy
+        # works out-of-the-box without Supabase configured yet.
+        if self.database_url and not self.database_url.startswith("postgresql"):
+            logger.critical("DATABASE_URL is set but is not a PostgreSQL connection string!")
+            raise RuntimeError("Configuration error: DATABASE_URL must be a postgresql:// URI.")
 
         self.is_postgres = self.database_url and self.database_url.startswith("postgresql")
         
@@ -62,8 +53,7 @@ class LearnerTracker:
                         time.sleep(2)
             except Exception as e:
                 logger.error(f"CRITICAL: Failed to initialize PG pool: {e}")
-                if self.is_prod:
-                    raise
+                raise RuntimeError(f"PostgreSQL connection pool failed to initialize: {e}") from e
 
     @contextmanager
     def _connect(self):
